@@ -18,14 +18,14 @@
       "interval": "2h"
     },
     {
-      "name": "manage-accounts",
-      "title": "Manage Accounts",
+      "name": "accounts",
+      "title": "Accounts",
       "description": "Dynamically rename, hide, or exclude accounts from your net worth.",
       "mode": "view"
     },
     {
-      "name": "recent-transactions",
-      "title": "Recent Transactions",
+      "name": "transactions",
+      "title": "Transactions",
       "description": "View a tabular list of recent transactions across all accounts.",
       "mode": "view"
     },
@@ -44,36 +44,33 @@
       "type": "password",
       "required": true
     },
+
     {
-      "name": "prefHistoryDays",
-      "title": "Transaction History (Days)",
-      "description": "How many days of transactions to request (SimpleFIN caps a single request at 90 days).",
+      "name": "prefArchiveDays",
+      "title": "Local Archive Limit (Days)",
+      "description": "How many days of historical transactions to keep in local cache. Leave blank for 365.",
       "type": "textfield",
-      "default": "30",
       "required": false
     },
     {
       "name": "prefAccountTxn",
       "title": "Transactions Per Account",
-      "description": "How many recent transactions to list inside each account submenu.",
+      "description": "How many recent transactions to list inside each account submenu. Leave blank for 8.",
       "type": "textfield",
-      "default": "8",
       "required": false
     },
     {
       "name": "prefGlobalTxnCount",
       "title": "Global Transactions Count",
-      "description": "How many recent transactions to show in the combined list at the bottom. Leave blank or 0 for none.",
+      "description": "How many recent transactions to show in the combined list at the bottom. Leave blank for 15, or 0 for none.",
       "type": "textfield",
-      "default": "15",
       "required": false
     },
     {
       "name": "prefGlobalTxnDays",
       "title": "Global Transactions Days",
-      "description": "Show all transactions from the last X days in the combined list. Leave blank for none.",
+      "description": "Show all transactions from the last X days in the combined list. Leave blank for 7.",
       "type": "textfield",
-      "default": "7",
       "required": false
     },
     {
@@ -91,17 +88,36 @@
     {
       "name": "prefDateFormat",
       "title": "Date Format",
-      "description": "e.g. MM/DD, DD/MM, MM-DD, YYYY-MM-DD",
+      "description": "Tokens: YYYY, YY, MMMM (January), MMM (Jan), MM (01), M (1), DD (01), D (1), dddd (Monday), ddd (Mon), d (0-6). Leave blank for MM/DD.",
       "type": "textfield",
-      "default": "MM/DD",
+      "required": false
+    },
+    {
+      "name": "prefDefaultCurrency",
+      "title": "Hide Currency Symbol / Code",
+      "description": "Enter a symbol or code to strip from amounts (e.g., '$', 'USD', '€'). Leave blank to show currency on all amounts.",
+      "type": "textfield",
+      "required": false
+    },
+    {
+      "name": "prefPositiveColor",
+      "title": "Positive / Income Color",
+      "description": "Hex (e.g. 2ECC71, #0f0) or HTML color (lime, blueviolet). Default: green",
+      "type": "textfield",
+      "required": false
+    },
+    {
+      "name": "prefNegativeColor",
+      "title": "Negative / Expense Color",
+      "description": "Hex (e.g. E74C3C, #f00) or HTML color (red, tomato). Default: red",
+      "type": "textfield",
       "required": false
     },
     {
       "name": "minIntervalMinutes",
       "title": "Minimum Fetch Interval (Minutes)",
-      "description": "Hard floor between network requests. SimpleFIN suggests ~90 mins.",
+      "description": "Hard floor between network requests. SimpleFIN suggests ~90 mins. Leave blank for 90.",
       "type": "textfield",
-      "default": "90",
       "required": false
     }
   ],

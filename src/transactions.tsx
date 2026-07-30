@@ -1,6 +1,6 @@
-import { Action, ActionPanel, Color, Icon, List, LocalStorage, environment } from "@raycast/api";
+import { Action, ActionPanel, Color, Icon, List, LocalStorage, environment, showToast, Toast } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
-import { getAccountSet, getPrefs, SimpleFinTransaction, formatAmount, formatDate } from "./simplefin";
+import { getAccountSet, getPrefs, getThemeColors, SimpleFinTransaction, formatAmount, formatDate, ThemeColor } from "./simplefin";
 
 function transactionDate(txn: SimpleFinTransaction, dateFormat: string): string {
   const epoch = txn.transacted_at ?? txn.posted;
@@ -9,6 +9,9 @@ function transactionDate(txn: SimpleFinTransaction, dateFormat: string): string 
 
 export default function Command() {
   const prefs = getPrefs();
+  const defaultCurrency = prefs.prefDefaultCurrency;
+  const { posColor, negColor } = getThemeColors(prefs);
+
   const { data, isLoading } = usePromise(async () => {
     const accountSet = await getAccountSet(environment.launchType === "background");
     const settings = await LocalStorage.allItems<Record<string, string>>();
@@ -34,8 +37,29 @@ export default function Command() {
   }
   allTxns.sort((a, b) => (b.transacted_at ?? b.posted) - (a.transacted_at ?? a.posted));
 
-  // Default limit if they have tons of history
-  const displayTxns = allTxns.slice(0, 300);
+  // Show all transactions (List is virtualized)
+  const displayTxns = allTxns;
+
+  const showArchiveStats = async () => {
+    let totalTxns = 0;
+    let oldestTs = Infinity;
+    for (const acc of accounts) {
+      for (const t of acc.transactions ?? []) {
+        totalTxns++;
+        const ts = t.transacted_at ?? t.posted;
+        if (ts < oldestTs) oldestTs = ts;
+      }
+    }
+    const days = oldestTs === Infinity ? 0 : Math.round((Date.now() / 1000 - oldestTs) / 86400);
+    const sizeBytes = Buffer.byteLength(JSON.stringify(accounts));
+    const sizeKb = (sizeBytes / 1024).toFixed(1) + " KB";
+
+    await showToast({
+      style: Toast.Style.Success,
+      title: "Archive Stats",
+      message: `${totalTxns} transactions • ${days} days • ${sizeKb}`,
+    });
+  };
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Filter transactions...">
@@ -43,7 +67,9 @@ export default function Command() {
         const amount = Number.parseFloat(txn.amount);
         const dateStr = transactionDate(txn, dateFormat);
         const title = (txn.payee || txn.description || "Transaction").trim();
-        const formattedAmount = formatAmount(txn.amount, txn.currency);
+        const formattedAmount = formatAmount(txn.amount, txn.currency, defaultCurrency);
+        const color: ThemeColor = amount < 0 ? negColor : posColor;
+        const textColor = typeof color === "object" && "light" in color ? undefined : color;
 
         return (
           <List.Item
@@ -52,12 +78,12 @@ export default function Command() {
             subtitle={title}
             keywords={[formattedAmount, txn.amount, txn.accountName]}
             icon={{
-              source: amount < 0 ? Icon.ArrowUpCircle : Icon.ArrowDownCircle,
-              tintColor: amount < 0 ? Color.Red : Color.Green,
+              source: amount < 0 ? Icon.ArrowDown : Icon.ArrowUp,
+              tintColor: color,
             }}
             accessories={[
               { text: txn.accountName, icon: Icon.Wallet },
-              { text: formattedAmount },
+              { tag: { value: formattedAmount, color } },
             ]}
             actions={
               <ActionPanel>
@@ -67,6 +93,12 @@ export default function Command() {
                 />
                 <Action.CopyToClipboard title="Copy Amount" content={formattedAmount} />
                 <Action.CopyToClipboard title="Copy Description" content={title} />
+                <Action
+                  title="Show Archive Stats"
+                  icon={Icon.Info}
+                  shortcut={{ modifiers: ["cmd", "shift"], key: "s" }}
+                  onAction={showArchiveStats}
+                />
               </ActionPanel>
             }
           />

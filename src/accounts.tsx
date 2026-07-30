@@ -1,6 +1,7 @@
 import {
   Action,
   ActionPanel,
+  Color,
   Form,
   Icon,
   List,
@@ -11,7 +12,69 @@ import {
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { useState } from "react";
-import { SimpleFinAccount, formatAmount, getAccountSet } from "./simplefin";
+import {
+  SimpleFinAccount,
+  ThemeColor,
+  formatAmount,
+  getAccountSet,
+  getPrefs,
+  getThemeColors,
+  signedBalance,
+  sortAccountsAndOrgs,
+} from "./simplefin";
+
+function OrgSettingsForm({
+  orgKey,
+  settings,
+  onSaved,
+}: {
+  orgKey: string;
+  settings: Record<string, string>;
+  onSaved: (newSettings: Record<string, string>) => void;
+}) {
+  const { pop } = useNavigation();
+  const settingsKey = `org_${orgKey}`;
+  const currentName = settings[settingsKey];
+
+  return (
+    <Form
+      navigationTitle={`Rename ${orgKey}`}
+      actions={
+        <ActionPanel>
+          <Action.SubmitForm
+            title="Save Institution Name"
+            onSubmit={async (values) => {
+              const newName = values.name.trim();
+              const newSettings: Record<string, string> = { ...settings };
+
+              if (newName && newName !== orgKey) {
+                await LocalStorage.setItem(settingsKey, newName);
+                newSettings[settingsKey] = newName;
+              } else {
+                await LocalStorage.removeItem(settingsKey);
+                delete newSettings[settingsKey];
+              }
+
+              onSaved(newSettings);
+              await showToast({
+                style: Toast.Style.Success,
+                title: "Institution Renamed",
+              });
+              pop();
+            }}
+          />
+        </ActionPanel>
+      }
+    >
+      <Form.Description text={`Original name: ${orgKey}`} />
+      <Form.TextField
+        id="name"
+        title="Institution Name"
+        defaultValue={currentName || orgKey}
+      />
+    </Form>
+  );
+}
 
 function AccountSettingsForm({
   account,
@@ -109,6 +172,9 @@ function AccountSettingsForm({
 
 export default function Command() {
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const prefs = getPrefs();
+  const defaultCurrency = prefs.prefDefaultCurrency;
+  const { posColor, negColor } = getThemeColors(prefs);
 
   const { data, isLoading, error } = usePromise(async () => {
     const accountSet = await getAccountSet(false);
@@ -118,6 +184,49 @@ export default function Command() {
   });
 
   const accounts = data?.accounts ?? [];
+  const orgEntries = sortAccountsAndOrgs(accounts, settings);
+
+  const moveAccount = async (accountId: string, direction: 1 | -1) => {
+    let order: string[] = [];
+    try {
+      if (settings["accountOrder"]) order = JSON.parse(settings["accountOrder"]);
+    } catch {}
+    
+    if (order.length === 0) {
+      order = accounts.map(a => a.id);
+    }
+    
+    const idx = order.indexOf(accountId);
+    if (idx === -1) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= order.length) return;
+    
+    [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
+    const newOrderStr = JSON.stringify(order);
+    await LocalStorage.setItem("accountOrder", newOrderStr);
+    setSettings({ ...settings, accountOrder: newOrderStr });
+  };
+
+  const moveOrg = async (orgKey: string, direction: 1 | -1) => {
+    let order: string[] = [];
+    try {
+      if (settings["orgOrder"]) order = JSON.parse(settings["orgOrder"]);
+    } catch {}
+    
+    if (order.length === 0) {
+      order = orgEntries.map(e => e.orgKey);
+    }
+    
+    const idx = order.indexOf(orgKey);
+    if (idx === -1) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= order.length) return;
+    
+    [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
+    const newOrderStr = JSON.stringify(order);
+    await LocalStorage.setItem("orgOrder", newOrderStr);
+    setSettings({ ...settings, orgOrder: newOrderStr });
+  };
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Search accounts...">
@@ -131,44 +240,90 @@ export default function Command() {
         <List.EmptyView icon={Icon.Wallet} title="No Accounts Found" />
       ) : null}
 
-      {accounts.map((account) => {
-        const customName = settings[account.id];
-        const isHidden = settings[`hide_${account.id}`] === "true";
-        const isExcluded = settings[`exclude_${account.id}`] === "true";
-
-        const displayName = customName || account.name;
-        const orgName = account.org?.name || account.org?.domain || "Unknown";
-        const subtitle = formatAmount(account.balance, account.currency);
-
-        const accessories = [];
-        if (isHidden)
-          accessories.push({ text: "Hidden", icon: Icon.EyeDisabled });
-        else if (isExcluded)
-          accessories.push({ text: "Excluded", icon: Icon.MinusCircle });
-        accessories.push({ text: orgName });
-
+      {orgEntries.map(({ orgKey, orgAccounts }) => {
+        const orgDisplayName = settings[`org_${orgKey}`] || orgKey;
+        
         return (
-          <List.Item
-            key={account.id}
-            icon={Icon.Wallet}
-            title={displayName}
-            subtitle={subtitle}
-            accessories={accessories}
-            actions={
-              <ActionPanel>
-                <Action.Push
-                  title="Edit Account Settings"
-                  icon={Icon.Pencil}
-                  target={
-                    <AccountSettingsForm
-                      account={account}
-                      settings={settings}
-                      onSaved={(id, newSettings) => {
-                        setSettings(newSettings);
-                      }}
-                    />
-                  }
-                />
+          <List.Section key={orgKey} title={orgDisplayName}>
+            {orgAccounts.map((account) => {
+              const customName = settings[account.id];
+              const isHidden = settings[`hide_${account.id}`] === "true";
+              const isExcluded = settings[`exclude_${account.id}`] === "true";
+
+              const displayName = customName || account.name;
+              const balance = signedBalance(account, settings);
+              const formattedBalance = formatAmount(balance, account.currency, defaultCurrency);
+              const isNegative = balance < 0;
+              const color: ThemeColor = isNegative ? negColor : posColor;
+
+              const accessories: List.Item.Accessory[] = [];
+              if (isHidden)
+                accessories.push({ text: "Hidden", icon: Icon.EyeDisabled });
+              else if (isExcluded)
+                accessories.push({ text: "Excluded", icon: Icon.MinusCircle });
+              accessories.push({ tag: { value: formattedBalance, color } });
+
+              return (
+                <List.Item
+                  key={account.id}
+                  icon={{ source: Icon.Wallet, tintColor: color }}
+                  title={displayName}
+                  accessories={accessories}
+                  actions={
+                    <ActionPanel>
+                      <ActionPanel.Section>
+                        <Action.Push
+                          title="Edit Account Settings"
+                          icon={Icon.Pencil}
+                          target={
+                            <AccountSettingsForm
+                              account={account}
+                              settings={settings}
+                              onSaved={(id, newSettings) => {
+                                setSettings(newSettings);
+                              }}
+                            />
+                          }
+                        />
+                        <Action.Push
+                          title="Rename Institution"
+                          icon={Icon.Building}
+                          target={
+                            <OrgSettingsForm
+                              orgKey={orgKey}
+                              settings={settings}
+                              onSaved={setSettings}
+                            />
+                          }
+                        />
+                      </ActionPanel.Section>
+                      
+                      <ActionPanel.Section title="Reorder">
+                        <Action
+                          title="Move Account Up"
+                          icon={Icon.ArrowUp}
+                          shortcut={{ modifiers: ["cmd", "opt"], key: "arrowUp" }}
+                          onAction={() => moveAccount(account.id, -1)}
+                        />
+                        <Action
+                          title="Move Account Down"
+                          icon={Icon.ArrowDown}
+                          shortcut={{ modifiers: ["cmd", "opt"], key: "arrowDown" }}
+                          onAction={() => moveAccount(account.id, 1)}
+                        />
+                        <Action
+                          title="Move Institution Up"
+                          icon={Icon.ArrowUpCircle}
+                          shortcut={{ modifiers: ["cmd", "shift"], key: "arrowUp" }}
+                          onAction={() => moveOrg(orgKey, -1)}
+                        />
+                        <Action
+                          title="Move Institution Down"
+                          icon={Icon.ArrowDownCircle}
+                          shortcut={{ modifiers: ["cmd", "shift"], key: "arrowDown" }}
+                          onAction={() => moveOrg(orgKey, 1)}
+                        />
+                      </ActionPanel.Section>
                 <Action
                   title={isHidden ? "Unhide Account" : "Hide Account"}
                   icon={isHidden ? Icon.Eye : Icon.EyeDisabled}
@@ -252,6 +407,9 @@ export default function Command() {
           />
         );
       })}
+      </List.Section>
+    );
+  })}
     </List>
   );
 }

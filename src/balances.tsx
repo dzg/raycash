@@ -15,13 +15,16 @@ import {
   AccountSet,
   SimpleFinAccount,
   SimpleFinTransaction,
+  ThemeColor,
   formatAmount,
   getAccountSet,
   getPrefs,
+  getThemeColors,
   relativeTime,
   requestsToday,
   signedBalance,
   formatDate,
+  sortAccountsAndOrgs,
 } from "./simplefin";
 
 function transactionTitle(txn: SimpleFinTransaction): string {
@@ -34,9 +37,56 @@ function transactionDate(txn: SimpleFinTransaction, dateFormat: string): string 
   return formatDate(epoch, dateFormat);
 }
 
-function accountIcon(amount: number) {
-  if (amount < 0) return { source: Icon.Minus, tintColor: Color.Red };
-  return { source: Icon.Plus, tintColor: Color.Green };
+function accountIcon(
+  amount: number,
+  posColor: ThemeColor,
+  negColor: ThemeColor,
+) {
+  if (amount < 0) return { source: Icon.Minus, tintColor: negColor };
+  return { source: Icon.Plus, tintColor: posColor };
+}
+
+function TransactionRow({
+  txn,
+  currency,
+  dateFormat,
+  accountName,
+  defaultCurrency,
+  posColor = Color.Green,
+  negColor = Color.Red,
+}: {
+  txn: SimpleFinTransaction;
+  currency: string;
+  dateFormat: string;
+  accountName?: string;
+  defaultCurrency?: string;
+  posColor?: ThemeColor;
+  negColor?: ThemeColor;
+}) {
+  const amount = Number.parseFloat(txn.amount);
+  const date = transactionDate(txn, dateFormat);
+  const formatted = formatAmount(txn.amount, currency, defaultCurrency);
+  return (
+    <MenuBarExtra.Item
+      subtitle={
+        accountName
+          ? `${accountName}  ·  ${transactionTitle(txn)}`
+          : transactionTitle(txn)
+      }
+      title={`${date} • ${formatted}${txn.pending ? " (pending)" : ""}`}
+      icon={{
+        source: amount < 0 ? Icon.ArrowDown : Icon.ArrowUp,
+        tintColor: amount < 0 ? negColor : posColor,
+      }}
+      tooltip={txn.memo || txn.description || undefined}
+      onAction={async () => {
+        await Clipboard.copy(
+          `${transactionTitle(txn)} ${formatted}`,
+        );
+        await showHUD("Copied transaction");
+      }}
+    />
+  );
 }
 
 function AccountSubmenu({
@@ -46,6 +96,9 @@ function AccountSubmenu({
   txnLimit,
   txnDays,
   dateFormat,
+  defaultCurrency,
+  posColor,
+  negColor,
 }: {
   account: SimpleFinAccount;
   settings: Record<string, string>;
@@ -53,11 +106,15 @@ function AccountSubmenu({
   txnLimit: number;
   txnDays?: number;
   dateFormat: string;
+  defaultCurrency?: string;
+  posColor: ThemeColor;
+  negColor: ThemeColor;
 }) {
   const balance = signedBalance(account, settings);
-  const label = formatAmount(balance, account.currency);
+  const label = formatAmount(balance, account.currency, defaultCurrency);
   const displayName = customName || account.name;
-  const org = account.org?.name || account.org?.domain || "";
+  const orgKey = account.org?.name || account.org?.domain || "";
+  const org = orgKey ? settings[`org_${orgKey}`] || orgKey : "";
   const available = account["available-balance"];
 
   let txns = (account.transactions ?? []).slice();
@@ -68,37 +125,29 @@ function AccountSubmenu({
   if (txnDays && txnDays > 0) {
     const cutoff = Date.now() / 1000 - txnDays * 86400;
     txns = txns.filter((t) => (t.transacted_at ?? t.posted) >= cutoff);
-  } else {
-    txns = txns.slice(0, txnLimit);
   }
+
+  const displayedTxns = txnLimit && txnLimit > 0 ? txns.slice(0, txnLimit) : txns;
+  const moreTxns = txnLimit && txnLimit > 0 ? txns.slice(txnLimit) : [];
 
   return (
     <MenuBarExtra.Submenu
-      title={`${displayName} — ${label}`}
-      icon={accountIcon(balance)}
+      title={`${displayName}:  ${label}`}
+      icon={accountIcon(balance, posColor, negColor)}
     >
-      <MenuBarExtra.Section title={org || undefined}>
-        <MenuBarExtra.Item
-          title={`Balance = ${label}`}
-          subtitle={
-            account["balance-date"]
-              ? `as of ${formatDate(account["balance-date"], dateFormat)}`
-              : undefined
-          }
-          icon={Icon.Coins}
-          onAction={async () => {
-            await Clipboard.copy(label);
-            await showHUD(`Copied ${label}`);
-          }}
-        />
-        {available && available !== account.balance ? (
+      {available && Number(available) !== 0 && available !== account.balance ? (
+        <MenuBarExtra.Section>
           <MenuBarExtra.Item
-            title={`Available ${formatAmount(available, account.currency)}`}
-            icon={Icon.Wallet}
-            onAction={() => undefined}
+            title={`Available ${formatAmount(available, account.currency, defaultCurrency)}`}
+            icon={Icon.Coins}
+            onAction={async () => {
+              const availFormatted = formatAmount(available, account.currency, defaultCurrency);
+              await Clipboard.copy(availFormatted);
+              await showHUD(`Copied ${availFormatted}`);
+            }}
           />
-        ) : null}
-      </MenuBarExtra.Section>
+        </MenuBarExtra.Section>
+      ) : null}
 
       <MenuBarExtra.Section
         title={txns.length ? "Recent Transactions" : undefined}
@@ -110,28 +159,34 @@ function AccountSubmenu({
             onAction={() => undefined}
           />
         ) : (
-          txns.map((txn) => {
-            const amount = Number.parseFloat(txn.amount);
-            return (
-              <MenuBarExtra.Item
+          <>
+            {displayedTxns.map((txn) => (
+              <TransactionRow
                 key={txn.id}
-                title={transactionTitle(txn)}
-                subtitle={`${formatAmount(txn.amount, account.currency)}${txn.pending ? " (pending)" : ""}  ·  ${transactionDate(txn, dateFormat)}`}
-                icon={{
-                  source:
-                    amount < 0 ? Icon.ArrowUpCircle : Icon.ArrowDownCircle,
-                  tintColor: amount < 0 ? Color.Red : Color.Green,
-                }}
-                tooltip={txn.memo || txn.description || undefined}
-                onAction={async () => {
-                  await Clipboard.copy(
-                    `${transactionTitle(txn)} ${formatAmount(txn.amount, account.currency)}`,
-                  );
-                  await showHUD("Copied transaction");
-                }}
+                txn={txn}
+                currency={account.currency}
+                dateFormat={dateFormat}
+                defaultCurrency={defaultCurrency}
+                posColor={posColor}
+                negColor={negColor}
               />
-            );
-          })
+            ))}
+            {moreTxns.length > 0 ? (
+              <MenuBarExtra.Submenu title="More" icon={Icon.Ellipsis}>
+                {moreTxns.map((txn) => (
+                  <TransactionRow
+                    key={txn.id}
+                    txn={txn}
+                    currency={account.currency}
+                    dateFormat={dateFormat}
+                    defaultCurrency={defaultCurrency}
+                    posColor={posColor}
+                    negColor={negColor}
+                  />
+                ))}
+              </MenuBarExtra.Submenu>
+            ) : null}
+          </>
         )}
       </MenuBarExtra.Section>
 
@@ -170,24 +225,21 @@ export default function Command() {
     : undefined;
   const titleMode = prefs.prefTitleMode || "total";
   const dateFormat = prefs.prefDateFormat || "MM/DD";
+  const defaultCurrency = prefs.prefDefaultCurrency;
+  const { posColor, negColor } = getThemeColors(prefs);
 
   const visibleAccounts = accounts.filter(
     (a) => settings[`hide_${a.id}`] !== "true",
   );
 
-  // Group by institution so a dozen accounts stay navigable.
-  const byOrg = new Map<string, SimpleFinAccount[]>();
-  for (const account of visibleAccounts) {
-    const key = account.org?.name || account.org?.domain || "Other";
-    byOrg.set(key, [...(byOrg.get(key) ?? []), account]);
-  }
+  const orgEntries = sortAccountsAndOrgs(visibleAccounts, settings);
 
   const net = visibleAccounts.reduce((sum, a) => {
     if (settings[`exclude_${a.id}`] === "true") return sum;
     return sum + signedBalance(a, settings);
   }, 0);
 
-  const netLabel = formatAmount(net, visibleAccounts[0]?.currency ?? "USD");
+  const netLabel = formatAmount(net, visibleAccounts[0]?.currency ?? "USD", defaultCurrency);
 
   const title = error
     ? "—"
@@ -235,8 +287,11 @@ export default function Command() {
         })()
       ) : null}
 
-      {[...byOrg.entries()].map(([org, orgAccounts]) => (
-        <MenuBarExtra.Section key={org} title={org}>
+      {orgEntries.map(({ orgKey, orgAccounts }) => (
+        <MenuBarExtra.Section
+          key={orgKey}
+          title={settings[`org_${orgKey}`] || orgKey}
+        >
           {orgAccounts.map((account) => (
             <AccountSubmenu
               key={account.id}
@@ -245,6 +300,9 @@ export default function Command() {
               customName={settings[account.id]}
               txnLimit={txnLimit}
               dateFormat={dateFormat}
+              defaultCurrency={defaultCurrency}
+              posColor={posColor}
+              negColor={negColor}
             />
           ))}
         </MenuBarExtra.Section>
@@ -254,7 +312,7 @@ export default function Command() {
         <MenuBarExtra.Section>
           <MenuBarExtra.Item
             title={`Net Total ${netLabel}`}
-            icon={Icon.Calculator}
+            icon={{ source: Icon.Calculator, tintColor: net < 0 ? negColor : posColor }}
             onAction={async () => {
               await Clipboard.copy(netLabel);
               await showHUD(`Copied ${netLabel}`);
@@ -268,61 +326,64 @@ export default function Command() {
           accountName: string;
           currency: string;
         })[] = [];
-        if (globalTxnCount || globalTxnDays) {
-          for (const acc of visibleAccounts) {
-            const displayName = settings[acc.id] || acc.name;
-            for (const t of acc.transactions ?? []) {
-              allTxns.push({
-                ...t,
-                accountName: displayName,
-                currency: acc.currency,
-              });
-            }
+        for (const acc of visibleAccounts) {
+          const displayName = settings[acc.id] || acc.name;
+          for (const t of acc.transactions ?? []) {
+            allTxns.push({
+              ...t,
+              accountName: displayName,
+              currency: acc.currency,
+            });
           }
-          allTxns.sort(
-            (a, b) =>
-              (b.transacted_at ?? b.posted) - (a.transacted_at ?? a.posted),
+        }
+        allTxns.sort(
+          (a, b) =>
+            (b.transacted_at ?? b.posted) - (a.transacted_at ?? a.posted),
+        );
+
+        if (globalTxnDays && globalTxnDays > 0) {
+          const cutoff = Date.now() / 1000 - globalTxnDays * 86400;
+          allTxns = allTxns.filter(
+            (t) => (t.transacted_at ?? t.posted) >= cutoff,
           );
-          if (globalTxnDays && globalTxnDays > 0) {
-            const cutoff = Date.now() / 1000 - globalTxnDays * 86400;
-            allTxns = allTxns.filter(
-              (t) => (t.transacted_at ?? t.posted) >= cutoff,
-            );
-          }
-          if (globalTxnCount && globalTxnCount > 0) {
-            allTxns = allTxns.slice(0, globalTxnCount);
-          }
         }
 
         if (allTxns.length === 0) return null;
 
+        const limit = globalTxnCount && globalTxnCount > 0 ? globalTxnCount : 15;
+        const displayedGlobalTxns = allTxns.slice(0, limit);
+        const moreGlobalTxns = allTxns.slice(limit);
+
         return (
-          <MenuBarExtra.Section title="Global Recent Transactions">
-            {allTxns.map((txn) => {
-              const amount = Number.parseFloat(txn.amount);
-              const dateStr = transactionDate(txn, dateFormat);
-              const title = `${dateStr}  ·  ${txn.accountName}  ·  ${transactionTitle(txn)}`;
-              
-              return (
-                <MenuBarExtra.Item
-                  key={`${txn.accountName}-${txn.id}`}
-                  title={title}
-                  subtitle={`${formatAmount(txn.amount, txn.currency)}${txn.pending ? " (pending)" : ""}`}
-                  icon={{
-                    source:
-                      amount < 0 ? Icon.ArrowUpCircle : Icon.ArrowDownCircle,
-                    tintColor: amount < 0 ? Color.Red : Color.Green,
-                  }}
-                  tooltip={txn.memo || txn.description || undefined}
-                  onAction={async () => {
-                    await Clipboard.copy(
-                      `${transactionTitle(txn)} ${formatAmount(txn.amount, txn.currency)}`,
-                    );
-                    await showHUD("Copied transaction");
-                  }}
-                />
-              );
-            })}
+          <MenuBarExtra.Section title="Recent Transactions">
+            {displayedGlobalTxns.map((txn) => (
+              <TransactionRow
+                key={`${txn.accountName}-${txn.id}`}
+                txn={txn}
+                currency={txn.currency}
+                dateFormat={dateFormat}
+                accountName={txn.accountName}
+                defaultCurrency={defaultCurrency}
+                posColor={posColor}
+                negColor={negColor}
+              />
+            ))}
+            {moreGlobalTxns.length > 0 ? (
+              <MenuBarExtra.Submenu title="More" icon={Icon.Ellipsis}>
+                {moreGlobalTxns.map((txn) => (
+                  <TransactionRow
+                    key={`${txn.accountName}-${txn.id}`}
+                    txn={txn}
+                    currency={txn.currency}
+                    dateFormat={dateFormat}
+                    accountName={txn.accountName}
+                    defaultCurrency={defaultCurrency}
+                    posColor={posColor}
+                    negColor={negColor}
+                  />
+                ))}
+              </MenuBarExtra.Submenu>
+            ) : null}
           </MenuBarExtra.Section>
         );
       })()}
