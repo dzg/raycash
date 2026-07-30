@@ -1,4 +1,4 @@
-import { Cache, getPreferenceValues, LocalStorage } from "@raycast/api";
+import { Cache, getPreferenceValues } from "@raycast/api";
 
 /**
  * SimpleFIN Bridge client.
@@ -55,8 +55,15 @@ export interface AccountSet {
   fromCache: boolean;
 }
 
-interface Preferences {
+export interface Preferences {
   accessUrl: string;
+  prefHistoryDays: string;
+  prefAccountTxn: string;
+  prefGlobalTxnCount: string;
+  prefGlobalTxnDays: string;
+  prefTitleMode: string;
+  prefDateFormat: string;
+  minIntervalMinutes: string;
 }
 
 const cache = new Cache({ namespace: "simplefin" });
@@ -178,9 +185,8 @@ function shouldFetch(force: boolean, minIntervalMinutes: number): boolean {
  */
 export async function getAccountSet(force = false): Promise<AccountSet> {
   const prefs = getPrefs();
-  const settings = await LocalStorage.allItems<Record<string, string>>();
-  const minInterval = Number(settings["minIntervalMinutes"] ?? "90");
-  const days = Number(settings["prefHistoryDays"] ?? "30");
+  const minInterval = Number(prefs.minIntervalMinutes || "90");
+  const days = Number(prefs.prefHistoryDays || "30");
 
   if (cache.get(KEY_ACCESS_URL) !== prefs.accessUrl) {
     cache.remove(KEY_PAYLOAD);

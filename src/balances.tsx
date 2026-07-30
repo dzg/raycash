@@ -149,6 +149,7 @@ function AccountSubmenu({
 }
 
 export default function Command() {
+  const prefs = getPrefs();
   const { data, isLoading, error, revalidate } = usePromise(async () => {
     const accountSet = await getAccountSet(
       environment.launchType === LaunchType.Background,
@@ -160,15 +161,15 @@ export default function Command() {
   const accounts = data?.accounts ?? [];
   const settings = data?.settings ?? {};
 
-  const txnLimit = Number(settings["prefAccountTxn"] ?? "8");
-  const globalTxnCount = settings["prefGlobalTxnCount"]
-    ? Number(settings["prefGlobalTxnCount"])
+  const txnLimit = Number(prefs.prefAccountTxn || "8");
+  const globalTxnCount = prefs.prefGlobalTxnCount
+    ? Number(prefs.prefGlobalTxnCount)
     : undefined;
-  const globalTxnDays = settings["prefGlobalTxnDays"]
-    ? Number(settings["prefGlobalTxnDays"])
+  const globalTxnDays = prefs.prefGlobalTxnDays
+    ? Number(prefs.prefGlobalTxnDays)
     : undefined;
-  const titleMode = settings["prefTitleMode"] ?? "total";
-  const dateFormat = settings["prefDateFormat"] || "MM/DD";
+  const titleMode = prefs.prefTitleMode || "total";
+  const dateFormat = prefs.prefDateFormat || "MM/DD";
 
   const visibleAccounts = accounts.filter(
     (a) => settings[`hide_${a.id}`] !== "true",

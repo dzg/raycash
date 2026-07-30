@@ -30,12 +30,6 @@
       "mode": "view"
     },
     {
-      "name": "global-settings",
-      "title": "Global Settings",
-      "description": "Configure global settings for Raycash balances.",
-      "mode": "view"
-    },
-    {
       "name": "refresh",
       "title": "Refresh Balances",
       "description": "Force a refresh of Raycash balances.",
@@ -49,6 +43,66 @@
       "description": "The https://user:pass@bridge.../simplefin URL returned by claiming your setup token. Stored in Keychain.",
       "type": "password",
       "required": true
+    },
+    {
+      "name": "prefHistoryDays",
+      "title": "Transaction History (Days)",
+      "description": "How many days of transactions to request (SimpleFIN caps a single request at 90 days).",
+      "type": "textfield",
+      "default": "30",
+      "required": false
+    },
+    {
+      "name": "prefAccountTxn",
+      "title": "Transactions Per Account",
+      "description": "How many recent transactions to list inside each account submenu.",
+      "type": "textfield",
+      "default": "8",
+      "required": false
+    },
+    {
+      "name": "prefGlobalTxnCount",
+      "title": "Global Transactions Count",
+      "description": "How many recent transactions to show in the combined list at the bottom. Leave blank or 0 for none.",
+      "type": "textfield",
+      "default": "15",
+      "required": false
+    },
+    {
+      "name": "prefGlobalTxnDays",
+      "title": "Global Transactions Days",
+      "description": "Show all transactions from the last X days in the combined list. Leave blank for none.",
+      "type": "textfield",
+      "default": "7",
+      "required": false
+    },
+    {
+      "name": "prefTitleMode",
+      "title": "Menu Bar Title",
+      "description": "What to display next to the icon in the menu bar.",
+      "type": "dropdown",
+      "default": "total",
+      "required": false,
+      "data": [
+        { "title": "Net Total", "value": "total" },
+        { "title": "Icon Only", "value": "none" }
+      ]
+    },
+    {
+      "name": "prefDateFormat",
+      "title": "Date Format",
+      "description": "e.g. MM/DD, DD/MM, MM-DD, YYYY-MM-DD",
+      "type": "textfield",
+      "default": "MM/DD",
+      "required": false
+    },
+    {
+      "name": "minIntervalMinutes",
+      "title": "Minimum Fetch Interval (Minutes)",
+      "description": "Hard floor between network requests. SimpleFIN suggests ~90 mins.",
+      "type": "textfield",
+      "default": "90",
+      "required": false
     }
   ],
   "dependencies": {

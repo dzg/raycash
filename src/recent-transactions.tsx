@@ -17,7 +17,7 @@ export default function Command() {
 
   const accounts = data?.accounts ?? [];
   const settings = data?.settings ?? {};
-  const dateFormat = settings["prefDateFormat"] || "MM/DD";
+  const dateFormat = prefs.prefDateFormat || "MM/DD";
 
   const visibleAccounts = accounts.filter((a) => settings[`hide_${a.id}`] !== "true");
 
