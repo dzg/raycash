@@ -11,7 +11,7 @@ export default async function Command() {
     await getAccountSet(true);
     const calls = requestsToday();
     await updateCommandMetadata({ subtitle: `API Calls Today: ${calls} / 18` });
-    
+
     toast.style = Toast.Style.Success;
     toast.title = "Balances refreshed successfully";
   } catch (err) {

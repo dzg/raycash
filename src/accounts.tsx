@@ -1,7 +1,6 @@
 import {
   Action,
   ActionPanel,
-  Color,
   Form,
   Icon,
   List,
@@ -189,18 +188,21 @@ export default function Command() {
   const moveAccount = async (accountId: string, direction: 1 | -1) => {
     let order: string[] = [];
     try {
-      if (settings["accountOrder"]) order = JSON.parse(settings["accountOrder"]);
-    } catch {}
-    
-    if (order.length === 0) {
-      order = accounts.map(a => a.id);
+      if (settings["accountOrder"])
+        order = JSON.parse(settings["accountOrder"]);
+    } catch (_e) {
+      // ignore invalid JSON
     }
-    
+
+    if (order.length === 0) {
+      order = accounts.map((a) => a.id);
+    }
+
     const idx = order.indexOf(accountId);
     if (idx === -1) return;
     const newIdx = idx + direction;
     if (newIdx < 0 || newIdx >= order.length) return;
-    
+
     [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
     const newOrderStr = JSON.stringify(order);
     await LocalStorage.setItem("accountOrder", newOrderStr);
@@ -211,17 +213,19 @@ export default function Command() {
     let order: string[] = [];
     try {
       if (settings["orgOrder"]) order = JSON.parse(settings["orgOrder"]);
-    } catch {}
-    
-    if (order.length === 0) {
-      order = orgEntries.map(e => e.orgKey);
+    } catch (_e) {
+      // ignore invalid JSON
     }
-    
+
+    if (order.length === 0) {
+      order = orgEntries.map((e) => e.orgKey);
+    }
+
     const idx = order.indexOf(orgKey);
     if (idx === -1) return;
     const newIdx = idx + direction;
     if (newIdx < 0 || newIdx >= order.length) return;
-    
+
     [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
     const newOrderStr = JSON.stringify(order);
     await LocalStorage.setItem("orgOrder", newOrderStr);
@@ -242,7 +246,7 @@ export default function Command() {
 
       {orgEntries.map(({ orgKey, orgAccounts }) => {
         const orgDisplayName = settings[`org_${orgKey}`] || orgKey;
-        
+
         return (
           <List.Section key={orgKey} title={orgDisplayName}>
             {orgAccounts.map((account) => {
@@ -252,7 +256,11 @@ export default function Command() {
 
               const displayName = customName || account.name;
               const balance = signedBalance(account, settings);
-              const formattedBalance = formatAmount(balance, account.currency, defaultCurrency);
+              const formattedBalance = formatAmount(
+                balance,
+                account.currency,
+                defaultCurrency,
+              );
               const isNegative = balance < 0;
               const color: ThemeColor = isNegative ? negColor : posColor;
 
@@ -297,119 +305,147 @@ export default function Command() {
                           }
                         />
                       </ActionPanel.Section>
-                      
+
                       <ActionPanel.Section title="Reorder">
                         <Action
                           title="Move Account Up"
                           icon={Icon.ArrowUp}
-                          shortcut={{ modifiers: ["cmd", "opt"], key: "arrowUp" }}
+                          shortcut={{
+                            modifiers: ["cmd", "opt"],
+                            key: "arrowUp",
+                          }}
                           onAction={() => moveAccount(account.id, -1)}
                         />
                         <Action
                           title="Move Account Down"
                           icon={Icon.ArrowDown}
-                          shortcut={{ modifiers: ["cmd", "opt"], key: "arrowDown" }}
+                          shortcut={{
+                            modifiers: ["cmd", "opt"],
+                            key: "arrowDown",
+                          }}
                           onAction={() => moveAccount(account.id, 1)}
                         />
                         <Action
                           title="Move Institution Up"
                           icon={Icon.ArrowUpCircle}
-                          shortcut={{ modifiers: ["cmd", "shift"], key: "arrowUp" }}
+                          shortcut={{
+                            modifiers: ["cmd", "shift"],
+                            key: "arrowUp",
+                          }}
                           onAction={() => moveOrg(orgKey, -1)}
                         />
                         <Action
                           title="Move Institution Down"
                           icon={Icon.ArrowDownCircle}
-                          shortcut={{ modifiers: ["cmd", "shift"], key: "arrowDown" }}
+                          shortcut={{
+                            modifiers: ["cmd", "shift"],
+                            key: "arrowDown",
+                          }}
                           onAction={() => moveOrg(orgKey, 1)}
                         />
                       </ActionPanel.Section>
-                <Action
-                  title={isHidden ? "Unhide Account" : "Hide Account"}
-                  icon={isHidden ? Icon.Eye : Icon.EyeDisabled}
-                  shortcut={{ modifiers: ["cmd", "shift"], key: "h" }}
-                  onAction={async () => {
-                    const nextVal = !isHidden;
-                    if (nextVal) {
-                      await LocalStorage.setItem(`hide_${account.id}`, "true");
-                    } else {
-                      await LocalStorage.removeItem(`hide_${account.id}`);
-                    }
-                    setSettings((prev) => {
-                      const next = { ...prev };
-                      if (nextVal) next[`hide_${account.id}`] = "true";
-                      else delete next[`hide_${account.id}`];
-                      return next;
-                    });
-                    await showToast({
-                      style: Toast.Style.Success,
-                      title: nextVal ? "Account Hidden" : "Account Unhidden",
-                    });
-                  }}
-                />
-                <Action
-                  title={
-                    isExcluded
-                      ? "Include in Net Total"
-                      : "Exclude from Net Total"
+                      <Action
+                        title={isHidden ? "Unhide Account" : "Hide Account"}
+                        icon={isHidden ? Icon.Eye : Icon.EyeDisabled}
+                        shortcut={{ modifiers: ["cmd", "shift"], key: "h" }}
+                        onAction={async () => {
+                          const nextVal = !isHidden;
+                          if (nextVal) {
+                            await LocalStorage.setItem(
+                              `hide_${account.id}`,
+                              "true",
+                            );
+                          } else {
+                            await LocalStorage.removeItem(`hide_${account.id}`);
+                          }
+                          setSettings((prev) => {
+                            const next = { ...prev };
+                            if (nextVal) next[`hide_${account.id}`] = "true";
+                            else delete next[`hide_${account.id}`];
+                            return next;
+                          });
+                          await showToast({
+                            style: Toast.Style.Success,
+                            title: nextVal
+                              ? "Account Hidden"
+                              : "Account Unhidden",
+                          });
+                        }}
+                      />
+                      <Action
+                        title={
+                          isExcluded
+                            ? "Include in Net Total"
+                            : "Exclude from Net Total"
+                        }
+                        icon={isExcluded ? Icon.PlusCircle : Icon.MinusCircle}
+                        shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+                        onAction={async () => {
+                          const nextVal = !isExcluded;
+                          if (nextVal) {
+                            await LocalStorage.setItem(
+                              `exclude_${account.id}`,
+                              "true",
+                            );
+                          } else {
+                            await LocalStorage.removeItem(
+                              `exclude_${account.id}`,
+                            );
+                          }
+                          setSettings((prev) => {
+                            const next = { ...prev };
+                            if (nextVal) next[`exclude_${account.id}`] = "true";
+                            else delete next[`exclude_${account.id}`];
+                            return next;
+                          });
+                          await showToast({
+                            style: Toast.Style.Success,
+                            title: nextVal
+                              ? "Account Excluded"
+                              : "Account Included",
+                          });
+                        }}
+                      />
+                      {customName ||
+                      isHidden ||
+                      isExcluded ||
+                      settings[`invert_${account.id}`] === "true" ? (
+                        <Action
+                          title="Reset All Settings"
+                          icon={Icon.ArrowCounterClockwise}
+                          style={Action.Style.Destructive}
+                          onAction={async () => {
+                            await LocalStorage.removeItem(account.id);
+                            await LocalStorage.removeItem(`hide_${account.id}`);
+                            await LocalStorage.removeItem(
+                              `exclude_${account.id}`,
+                            );
+                            await LocalStorage.removeItem(
+                              `invert_${account.id}`,
+                            );
+                            setSettings((prev) => {
+                              const next = { ...prev };
+                              delete next[account.id];
+                              delete next[`hide_${account.id}`];
+                              delete next[`exclude_${account.id}`];
+                              delete next[`invert_${account.id}`];
+                              return next;
+                            });
+                            await showToast({
+                              style: Toast.Style.Success,
+                              title: "Settings Reset",
+                            });
+                          }}
+                        />
+                      ) : null}
+                    </ActionPanel>
                   }
-                  icon={isExcluded ? Icon.PlusCircle : Icon.MinusCircle}
-                  shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
-                  onAction={async () => {
-                    const nextVal = !isExcluded;
-                    if (nextVal) {
-                      await LocalStorage.setItem(
-                        `exclude_${account.id}`,
-                        "true",
-                      );
-                    } else {
-                      await LocalStorage.removeItem(`exclude_${account.id}`);
-                    }
-                    setSettings((prev) => {
-                      const next = { ...prev };
-                      if (nextVal) next[`exclude_${account.id}`] = "true";
-                      else delete next[`exclude_${account.id}`];
-                      return next;
-                    });
-                    await showToast({
-                      style: Toast.Style.Success,
-                      title: nextVal ? "Account Excluded" : "Account Included",
-                    });
-                  }}
                 />
-                {customName || isHidden || isExcluded || settings[`invert_${account.id}`] === "true" ? (
-                  <Action
-                    title="Reset All Settings"
-                    icon={Icon.ArrowCounterClockwise}
-                    style={Action.Style.Destructive}
-                    onAction={async () => {
-                      await LocalStorage.removeItem(account.id);
-                      await LocalStorage.removeItem(`hide_${account.id}`);
-                      await LocalStorage.removeItem(`exclude_${account.id}`);
-                      await LocalStorage.removeItem(`invert_${account.id}`);
-                      setSettings((prev) => {
-                        const next = { ...prev };
-                        delete next[account.id];
-                        delete next[`hide_${account.id}`];
-                        delete next[`exclude_${account.id}`];
-                        delete next[`invert_${account.id}`];
-                        return next;
-                      });
-                      await showToast({
-                        style: Toast.Style.Success,
-                        title: "Settings Reset",
-                      });
-                    }}
-                  />
-                ) : null}
-              </ActionPanel>
-            }
-          />
+              );
+            })}
+          </List.Section>
         );
       })}
-      </List.Section>
-    );
-  })}
     </List>
   );
 }

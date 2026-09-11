@@ -1,6 +1,6 @@
 import { Cache, Color, getPreferenceValues } from "@raycast/api";
 
-/** 
+/**
  * SimpleFIN Bridge client.
  *
  * Protocol reference: https://www.simplefin.org/protocol.html
@@ -193,7 +193,7 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
 
   let daysToFetch = 90;
   const cachedForFetch = readCache();
-  
+
   if (cachedForFetch && cachedForFetch.accounts.length > 0) {
     let newestTs = 0;
     for (const acc of cachedForFetch.accounts) {
@@ -277,29 +277,35 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
       const oldAccount = oldAccountsMap.get(newAccount.id);
       if (oldAccount && oldAccount.transactions) {
         const txnsMap = new Map<string, SimpleFinTransaction>();
-        
+
         for (const t of oldAccount.transactions) {
           txnsMap.set(t.id, t);
         }
         for (const t of newAccount.transactions || []) {
           txnsMap.set(t.id, t);
         }
-        
-        const mergedTxns = Array.from(txnsMap.values()).filter(t => {
+
+        const mergedTxns = Array.from(txnsMap.values()).filter((t) => {
           const ts = t.transacted_at ?? t.posted;
           return ts >= cutoffTimestamp;
         });
-        
-        mergedTxns.sort((a, b) => (b.transacted_at ?? b.posted) - (a.transacted_at ?? a.posted));
-        
+
+        mergedTxns.sort(
+          (a, b) =>
+            (b.transacted_at ?? b.posted) - (a.transacted_at ?? a.posted),
+        );
+
         newAccount.transactions = mergedTxns;
       } else if (newAccount.transactions) {
         // Just filter and sort new account's transactions if no old account exists
-        const txns = newAccount.transactions.filter(t => {
+        const txns = newAccount.transactions.filter((t) => {
           const ts = t.transacted_at ?? t.posted;
           return ts >= cutoffTimestamp;
         });
-        txns.sort((a, b) => (b.transacted_at ?? b.posted) - (a.transacted_at ?? a.posted));
+        txns.sort(
+          (a, b) =>
+            (b.transacted_at ?? b.posted) - (a.transacted_at ?? a.posted),
+        );
         newAccount.transactions = txns;
       }
     }
@@ -307,11 +313,14 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
     // No old cache, just filter and sort the incoming ones
     for (const newAccount of accounts) {
       if (newAccount.transactions) {
-        const txns = newAccount.transactions.filter(t => {
+        const txns = newAccount.transactions.filter((t) => {
           const ts = t.transacted_at ?? t.posted;
           return ts >= cutoffTimestamp;
         });
-        txns.sort((a, b) => (b.transacted_at ?? b.posted) - (a.transacted_at ?? a.posted));
+        txns.sort(
+          (a, b) =>
+            (b.transacted_at ?? b.posted) - (a.transacted_at ?? a.posted),
+        );
         newAccount.transactions = txns;
       }
     }
@@ -325,8 +334,10 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
 
 export type ThemeColor = Color | { light: string; dark: string };
 
-
-function parseColorPref(colorStr?: string, defaultColorStr: string = "green"): ThemeColor {
+function parseColorPref(
+  colorStr?: string,
+  defaultColorStr: string = "green",
+): ThemeColor {
   const c = (colorStr?.trim() || defaultColorStr).toLowerCase();
   // If it's a 3 or 6 char hex without a hash, prepend the hash
   if (/^([0-9a-f]{3}|[0-9a-f]{6})$/.test(c)) {
@@ -336,15 +347,25 @@ function parseColorPref(colorStr?: string, defaultColorStr: string = "green"): T
   // We can pass any valid CSS color string to { light: str, dark: str }
   // but Raycast's Color enum properties are capitalised, so let's try to map common ones if possible
   switch (c) {
-    case "blue": return Color.Blue;
-    case "purple": return Color.Purple;
-    case "magenta": return Color.Magenta;
-    case "orange": return Color.Orange;
-    case "yellow": return Color.Yellow;
-    case "green": return Color.Green;
-    case "red": return Color.Red;
+    case "blue":
+      return Color.Blue;
+    case "purple":
+      return Color.Purple;
+    case "magenta":
+      return Color.Magenta;
+    case "orange":
+      return Color.Orange;
+    case "yellow":
+      return Color.Yellow;
+    case "green":
+      return Color.Green;
+    case "red":
+      return Color.Red;
     default:
-      return { light: c.startsWith("#") ? c : c, dark: c.startsWith("#") ? c : c };
+      return {
+        light: c.startsWith("#") ? c : c,
+        dark: c.startsWith("#") ? c : c,
+      };
   }
 }
 
@@ -383,7 +404,7 @@ export function formatAmount(
   if (hideSymbolPref?.trim()) {
     const sym = hideSymbolPref.trim();
     if (sym === "$" || sym.toUpperCase() === "USD") {
-      // Aggressively strip ALL currency letters/symbols (e.g. CA$, £, US$) 
+      // Aggressively strip ALL currency letters/symbols (e.g. CA$, £, US$)
       formatted = formatted.replace(/[^\d.,-]/g, "");
     } else {
       formatted = formatted.replaceAll(sym, "");
@@ -417,31 +438,71 @@ export function relativeTime(epochMillis: number): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-export function formatDate(epochSeconds: number, format: string = "MM/DD"): string {
+export function formatDate(
+  epochSeconds: number,
+  format: string = "MM/DD",
+): string {
   if (!epochSeconds) return "";
   const date = new Date(epochSeconds * 1000);
 
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const monthsFull = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const daysFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  const monthsFull = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const daysFull = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
 
   const map: Record<string, string> = {
-    'YYYY': String(date.getFullYear()),
-    'YY': String(date.getFullYear()).slice(-2),
-    'MMMM': monthsFull[date.getMonth()],
-    'MMM': months[date.getMonth()],
-    'MM': String(date.getMonth() + 1).padStart(2, '0'),
-    'M': String(date.getMonth() + 1),
-    'DD': String(date.getDate()).padStart(2, '0'),
-    'D': String(date.getDate()),
-    'dddd': daysFull[date.getDay()],
-    'ddd': days[date.getDay()],
-    'd': String(date.getDay()),
+    YYYY: String(date.getFullYear()),
+    YY: String(date.getFullYear()).slice(-2),
+    MMMM: monthsFull[date.getMonth()],
+    MMM: months[date.getMonth()],
+    MM: String(date.getMonth() + 1).padStart(2, "0"),
+    M: String(date.getMonth() + 1),
+    DD: String(date.getDate()).padStart(2, "0"),
+    D: String(date.getDate()),
+    dddd: daysFull[date.getDay()],
+    ddd: days[date.getDay()],
+    d: String(date.getDay()),
   };
 
   // Match longest tokens first to avoid partial replacements
-  return format.replace(/YYYY|YY|MMMM|MMM|MM|M|dddd|ddd|DD|D|d/g, (match) => map[match]);
+  return format.replace(
+    /YYYY|YY|MMMM|MMM|MM|M|dddd|ddd|DD|D|d/g,
+    (match) => map[match],
+  );
 }
 
 export function sortAccountsAndOrgs(
@@ -456,10 +517,13 @@ export function sortAccountsAndOrgs(
 
   let accountOrder: string[] = [];
   try {
-    if (settings["accountOrder"]) accountOrder = JSON.parse(settings["accountOrder"]);
-  } catch (e) {}
+    if (settings["accountOrder"])
+      accountOrder = JSON.parse(settings["accountOrder"]);
+  } catch (_e) {
+    // ignore invalid JSON
+  }
 
-  for (const [_, orgAccounts] of byOrg.entries()) {
+  for (const [, orgAccounts] of byOrg.entries()) {
     orgAccounts.sort((a, b) => {
       const idxA = accountOrder.indexOf(a.id);
       const idxB = accountOrder.indexOf(b.id);
@@ -473,9 +537,13 @@ export function sortAccountsAndOrgs(
   let orgOrder: string[] = [];
   try {
     if (settings["orgOrder"]) orgOrder = JSON.parse(settings["orgOrder"]);
-  } catch (e) {}
+  } catch (_e) {
+    // ignore invalid JSON
+  }
 
-  const orgEntries = Array.from(byOrg.entries()).map(([orgKey, orgAccounts]) => ({ orgKey, orgAccounts }));
+  const orgEntries = Array.from(byOrg.entries()).map(
+    ([orgKey, orgAccounts]) => ({ orgKey, orgAccounts }),
+  );
   orgEntries.sort((a, b) => {
     const idxA = orgOrder.indexOf(a.orgKey);
     const idxB = orgOrder.indexOf(b.orgKey);
