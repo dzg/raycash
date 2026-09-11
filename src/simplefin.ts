@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { Cache, Color, getPreferenceValues } from "@raycast/api";
 
 /**
@@ -55,38 +56,42 @@ export interface AccountSet {
   fromCache: boolean;
 }
 
-export interface Preferences {
-  accessUrl?: string;
-
-  prefArchiveDays?: string;
-  prefAccountTxn?: string;
-  prefGlobalTxnCount?: string;
-  prefGlobalTxnDays?: string;
-  prefTitleMode?: string;
-  prefDateFormat?: string;
-  prefRowTemplate?: string;
-  prefDisableAlignment?: boolean;
-  prefDefaultCurrency?: string;
-  prefGroupByDate?: boolean;
-  prefPositiveColor?: string;
-  prefNegativeColor?: string;
-  minIntervalMinutes?: string;
-}
-
 const cache = new Cache({ namespace: "simplefin" });
 
 const KEY_PAYLOAD = "payload";
 const KEY_FETCHED_AT = "fetchedAt";
 const KEY_COUNTER = "counter";
-const KEY_ACCESS_URL = "accessUrl";
+/** SHA-256 of the Access URL, kept only to notice when the user swaps it. */
+const KEY_ACCESS_HASH = "accessUrlHash";
+/** Older builds cached the Access URL itself, in plain text. */
+const LEGACY_KEY_ACCESS_URL = "accessUrl";
 
 /** Absolute ceiling on network requests per calendar day, below SimpleFIN's ~24. */
 export const MAX_REQUESTS_PER_DAY = 18;
 /** Even a forced refresh will not fire more often than this. */
 const FORCE_FLOOR_MINUTES = 20;
 
+/** `Preferences` is generated from package.json into raycast-env.d.ts. */
 export function getPrefs(): Preferences {
   return getPreferenceValues<Preferences>();
+}
+
+/**
+ * Reads a numeric text preference. Blank, non-numeric or out-of-range input
+ * falls back to the default, so a typo can never become NaN downstream.
+ */
+export function numberPref(
+  value: string | undefined,
+  fallback: number,
+  min = 0,
+): number {
+  const text = (value ?? "").trim();
+  const n = Number(text);
+  return text !== "" && Number.isFinite(n) && n >= min ? n : fallback;
+}
+
+function fingerprint(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 interface Counter {
@@ -179,10 +184,12 @@ function readCache():
 }
 
 function shouldFetch(force: boolean, minIntervalMinutes: number): boolean {
+  // The cap comes first. Checked after the cache, a fresh install whose
+  // requests keep failing would retry on every launch with no ceiling at all.
+  if (requestsToday() >= (force ? 24 : MAX_REQUESTS_PER_DAY)) return false;
+
   const cached = readCache();
   if (!cached) return true;
-
-  if (requestsToday() >= (force ? 24 : MAX_REQUESTS_PER_DAY)) return false;
 
   const ageMinutes = (Date.now() - cached.fetchedAt) / 60000;
   return force
@@ -196,21 +203,31 @@ function shouldFetch(force: boolean, minIntervalMinutes: number): boolean {
  */
 export async function getAccountSet(force = false): Promise<AccountSet> {
   const prefs = getPrefs();
-  const minInterval = Number(prefs.minIntervalMinutes || "90");
+  const minInterval = numberPref(prefs.minIntervalMinutes, 90);
 
   const accessUrl = prefs.accessUrl?.trim();
-  const cachedAccessUrl = cache.get(KEY_ACCESS_URL);
+  const accessHash = accessUrl ? fingerprint(accessUrl) : undefined;
+
+  // Drop the plain-text copy older builds kept. The same URL means the same
+  // data and the same quota, so carry both over rather than treat it as new.
+  const legacyUrl = cache.get(LEGACY_KEY_ACCESS_URL);
+  if (legacyUrl !== undefined) {
+    cache.remove(LEGACY_KEY_ACCESS_URL);
+    if (accessHash && legacyUrl === accessUrl) {
+      cache.set(KEY_ACCESS_HASH, accessHash);
+    }
+  }
 
   let daysToFetch = 90;
 
-  if (cachedAccessUrl !== (accessUrl ?? undefined)) {
+  if (cache.get(KEY_ACCESS_HASH) !== accessHash) {
     cache.remove(KEY_PAYLOAD);
     cache.remove(KEY_FETCHED_AT);
     cache.remove(KEY_COUNTER);
-    if (accessUrl) {
-      cache.set(KEY_ACCESS_URL, accessUrl);
+    if (accessHash) {
+      cache.set(KEY_ACCESS_HASH, accessHash);
     } else {
-      cache.remove(KEY_ACCESS_URL);
+      cache.remove(KEY_ACCESS_HASH);
     }
     force = true;
   }
@@ -234,6 +251,10 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
     if (cachedForFetch) {
       return { ...cachedForFetch, fromCache: true };
     }
+    // With nothing cached, only the daily cap refuses a fetch.
+    throw new Error(
+      `Daily SimpleFIN request limit reached (${requestsToday()} today). It resets at midnight UTC.`,
+    );
   }
 
   if (!accessUrl || !accessUrl.includes("://")) {
@@ -276,7 +297,8 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
   const errors = body.errors ?? [];
   const fetchedAt = Date.now();
 
-  const archiveDays = Number(prefs.prefArchiveDays || "365");
+  // At least one day: 0 or NaN would filter out, then persist, every transaction.
+  const archiveDays = numberPref(prefs.prefArchiveDays, 365, 1);
   const cutoffTimestamp = Math.floor(Date.now() / 1000) - archiveDays * 86400;
   const oldCached = readCache();
 
@@ -454,6 +476,27 @@ export function formatAmount(
   }
 
   return formatted;
+}
+
+/**
+ * formatAmount with a leading minus on negatives. Rows show direction with an
+ * arrow instead, but totals and anything copied must keep the sign.
+ */
+export function formatSignedAmount(
+  value: string | number,
+  currency?: string,
+  hideSymbolPref?: string,
+  fractionDigits = 2,
+): string {
+  const formatted = formatAmount(
+    value,
+    currency,
+    hideSymbolPref,
+    fractionDigits,
+  );
+  const raw = typeof value === "number" ? value : Number.parseFloat(value);
+  // Compare after rounding so -0.004 does not come out as "-$0.00".
+  return Number(raw.toFixed(fractionDigits)) < 0 ? `-${formatted}` : formatted;
 }
 
 /**
@@ -747,6 +790,25 @@ export function signedBalance(
   if (Number.isNaN(raw)) return 0;
   const shouldInvert = settings?.[`invert_${account.id}`] === "true";
   return shouldInvert ? -raw : raw;
+}
+
+/**
+ * Net total per currency, largest first. Balances in different currencies
+ * cannot be added together, so each gets its own total.
+ */
+export function totalsByCurrency(
+  accounts: SimpleFinAccount[],
+  settings: Record<string, string>,
+): { currency: string; total: number }[] {
+  const totals = new Map<string, number>();
+  for (const account of accounts) {
+    if (settings[`exclude_${account.id}`] === "true") continue;
+    const iso = resolveCurrency(account.currency);
+    totals.set(iso, (totals.get(iso) ?? 0) + signedBalance(account, settings));
+  }
+  return Array.from(totals, ([currency, total]) => ({ currency, total })).sort(
+    (a, b) => Math.abs(b.total) - Math.abs(a.total),
+  );
 }
 
 export function relativeTime(epochMillis: number): string {

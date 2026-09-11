@@ -4,12 +4,17 @@
 
 RayCash puts your net worth in your Mac's menu bar and your recent transactions one click below it — every bank, credit card, and brokerage you use, in one place. No app to open, no dashboard to log into. Glance up, see where you stand, get back to what you were doing.
 
+![Menu bar with balances by bank and recent transactions](media/menu-bar.png)
+
+![Transactions search with the detail pane open](media/transactions.png)
+
+
 ## Is this safe?
 
 Short answer: yes, by design.
 
 - **RayCash can only *look* at your accounts — it can never move money.** It connects through [SimpleFIN](https://beta-bridge.simplefin.org/), a service built specifically to give apps read-only access to bank data. There is no "send money" capability to misuse, even in theory.
-- **RayCash never sees your bank password.** You log into your bank on SimpleFIN's site, not in RayCash. All RayCash ever holds is a read-only access link, and it stores that in the macOS Keychain — the same protected vault your Mac uses for your own passwords.
+- **RayCash never sees your bank password.** You log into your bank on SimpleFIN's site, not in RayCash. All RayCash ever holds is a read-only access link, which Raycast stores encrypted on your Mac.
 - **Your data stays on your Mac.** Transactions are cached locally so the menu opens instantly. Nothing is sent anywhere except to SimpleFIN to fetch your own data.
 
 ## What you get
@@ -80,20 +85,21 @@ A few niceties:
 <details>
 <summary><strong>All preferences</strong></summary>
 
-| Preference | What it does |
-|---|---|
-| **SimpleFIN Access URL** | Your access link from setup. Stored in the Keychain. |
-| **Menu Bar Title** | Show your net total, or just the icon. |
-| **Positive / Negative Color** | Colors for money in and money out. |
-| **Grouping** | Flat transaction list, or one submenu per day. |
-| **Row Template** | What each transaction row shows (see above). |
-| **Day Heading Format** | Date format for day headings. |
-| **Hide Currency Symbol / Code** | Enter `$` or `USD` to hide it from amounts. |
-| **Transactions Per Account** | How many recent transactions inside each account's submenu. |
-| **Global Transactions Count / Days** | Size of the combined feed at the bottom of the menu. |
-| **Local Archive Limit (Days)** | How much history to keep on your Mac (default: a year). |
-| **Alignment** | Amounts and dates line up in neat columns; turn off if you prefer them unpadded. |
-| **Minimum Fetch Interval** | How long RayCash waits between checks with SimpleFIN. |
+
+| Preference                           | What it does                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------- |
+| **SimpleFIN Access URL**             | Your access link from setup. Stored encrypted by Raycast.                        |
+| **Menu Bar Title**                   | Show your net total, or just the icon.                                           |
+| **Positive / Negative Color**        | Colors for money in and money out.                                               |
+| **Grouping**                         | Flat transaction list, or one submenu per day.                                   |
+| **Row Template**                     | What each transaction row shows (see above).                                     |
+| **Day Heading Format**               | Date format for day headings.                                                    |
+| **Hide Currency Symbol / Code**      | Enter `$` or `USD` to hide it from amounts.                                      |
+| **Transactions Per Account**         | How many recent transactions inside each account's submenu.                      |
+| **Global Transactions Count / Days** | Size of the combined feed at the bottom of the menu.                             |
+| **Local Archive Limit (Days)**       | How much history to keep on your Mac (default: a year).                          |
+| **Alignment**                        | Amounts and dates line up in neat columns; turn off if you prefer them unpadded. |
+| **Minimum Fetch Interval**           | How long RayCash waits between checks with SimpleFIN.                            |
 
 </details>
 

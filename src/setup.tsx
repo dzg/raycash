@@ -16,8 +16,7 @@ import { claimSetupToken } from "./simplefin";
 const BRIDGE_URL = "https://beta-bridge.simplefin.org/";
 
 /**
- * Shows the claimed Access URL and gets it into the (Keychain-backed)
- * preference.
+ * Shows the claimed Access URL and gets it into the (encrypted) preference.
  *
  * Raycast has no API for writing a preference, so the URL cannot be stored
  * automatically — but copying it and opening the preferences pane turns the
@@ -36,7 +35,7 @@ function ClaimedView({ accessUrl }: { accessUrl: string }) {
         accessUrl,
         "```",
         "",
-        "This URL is a permanent, read-only credential for every account you linked. Treat it like a password — the preference stores it in the macOS Keychain, not in Raycast's plain-text settings.",
+        "This URL is a permanent, read-only credential for every account you linked. Treat it like a password: Raycast stores it encrypted, but anyone who sees it can read your accounts.",
         "",
         "If it ever leaks, delete the connection on the bridge and set up again.",
       ].join("\n")}

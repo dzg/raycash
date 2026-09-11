@@ -46,7 +46,7 @@
     {
       "name": "accessUrl",
       "title": "SimpleFIN Access URL",
-      "description": "Paste the URL from the Set Up SimpleFIN command. Stored in the macOS Keychain.",
+      "description": "Paste the URL from the Set Up SimpleFIN command. Stored encrypted by Raycast.",
       "type": "password",
       "required": false
     },

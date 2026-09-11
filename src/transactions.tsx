@@ -21,6 +21,7 @@ import {
   SimpleFinTransaction,
   ThemeColor,
   formatAmount,
+  formatSignedAmount,
   searchScore,
   formatDate,
   formatTransactionDetail,
@@ -250,13 +251,17 @@ export default function Command() {
       return ts >= startOfToday && ts < endOfToday;
     });
 
-    const totalAmount = todayTxns.reduce(
-      (sum, t) => sum + Number.parseFloat(t.amount || "0"),
-      0,
-    );
-    const currency =
-      todayTxns[0]?.currency ?? visibleAccounts[0]?.currency ?? "USD";
-    const amountStr = formatAmount(totalAmount, currency, defaultCurrency);
+    // Signed, and one total per currency: unlike currencies cannot be summed.
+    const totals = new Map<string, number>();
+    for (const t of todayTxns) {
+      const sum = totals.get(t.currency) ?? 0;
+      totals.set(t.currency, sum + (Number.parseFloat(t.amount) || 0));
+    }
+    if (totals.size === 0) totals.set(visibleAccounts[0]?.currency ?? "USD", 0);
+    const hideSymbol = totals.size > 1 ? undefined : defaultCurrency;
+    const amountStr = Array.from(totals, ([currency, sum]) =>
+      formatSignedAmount(sum, currency, hideSymbol),
+    ).join("  ");
 
     updateCommandMetadata({ subtitle: `Today: ${amountStr}` });
   }, [data, defaultCurrency]);
@@ -346,7 +351,11 @@ export default function Command() {
             />
             <Action.CopyToClipboard
               title="Copy Amount"
-              content={formattedAmount}
+              content={formatSignedAmount(
+                txn.amount,
+                txn.currency,
+                defaultCurrency,
+              )}
             />
             <Action.CopyToClipboard title="Copy Description" content={title} />
             <Action.CopyToClipboard

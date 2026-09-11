@@ -34,6 +34,9 @@ import {
   STRIP_STORAGE_KEY,
   sortAccountsAndOrgs,
   formatRefreshTime,
+  formatSignedAmount,
+  numberPref,
+  totalsByCurrency,
 } from "./simplefin";
 
 const DEFAULT_POS = { light: "#0f0", dark: "#0f0" };
@@ -302,7 +305,7 @@ function AccountSubmenu({
             title={`Available ${formatAmount(available, account.currency, defaultCurrency)}`}
             icon={Icon.Coins}
             onAction={async () => {
-              const availFormatted = formatAmount(
+              const availFormatted = formatSignedAmount(
                 available,
                 account.currency,
                 defaultCurrency,
@@ -384,13 +387,11 @@ export default function Command() {
   const accounts = data?.accounts ?? [];
   const settings = data?.settings ?? {};
 
-  const txnLimit = Number(prefs.prefAccountTxn || "8");
-  const globalTxnCount = prefs.prefGlobalTxnCount
-    ? Number(prefs.prefGlobalTxnCount)
-    : undefined;
-  const globalTxnDays = prefs.prefGlobalTxnDays
-    ? Number(prefs.prefGlobalTxnDays)
-    : undefined;
+  const txnLimit = numberPref(prefs.prefAccountTxn, 8);
+  // 0 hides the combined list, as the preference describes.
+  const globalTxnCount = numberPref(prefs.prefGlobalTxnCount, 15);
+  // 0 applies no day cutoff.
+  const globalTxnDays = numberPref(prefs.prefGlobalTxnDays, 0);
   const titleMode = prefs.prefTitleMode || "total";
   // Left undefined when blank so day headings fall back to "ddd, MMM D".
   const dateFormat = prefs.prefDateFormat;
@@ -414,27 +415,30 @@ export default function Command() {
     ),
   );
 
-  const net = visibleAccounts.reduce((sum, a) => {
-    if (settings[`exclude_${a.id}`] === "true") return sum;
-    return sum + signedBalance(a, settings);
-  }, 0);
-
-  const currency = visibleAccounts[0]?.currency ?? "USD";
+  // One total per currency: unlike currencies cannot be added together.
+  const totals = totalsByCurrency(visibleAccounts, settings);
+  // With several totals on show, stripping symbols would leave them ambiguous.
+  const hideSymbol = totals.length > 1 ? undefined : defaultCurrency;
   // The menu bar is tight, and cents on a six-figure total are noise.
-  const netTitle = formatAmount(net, currency, defaultCurrency, 0);
-  const netLabel = formatAmount(net, currency, defaultCurrency);
+  const netTitle = totals
+    .map((t) => formatSignedAmount(t.total, t.currency, hideSymbol, 0))
+    .join("  ");
 
   const title = error
     ? "—"
     : titleMode === "none"
       ? undefined
-      : visibleAccounts.length
+      : totals.length
         ? netTitle
         : undefined;
 
   return (
     <MenuBarExtra
-      icon={error ? { source: Icon.Warning, tintColor: Color.Red } : Icon.Coins}
+      icon={
+        error
+          ? { source: Icon.Warning, tintColor: Color.Red }
+          : { source: Icon.Coins, tintColor: Color.Green }
+      }
       title={title}
       isLoading={isLoading}
       tooltip="RayCash"
@@ -496,19 +500,25 @@ export default function Command() {
         </MenuBarExtra.Section>
       ))}
 
-      {visibleAccounts.length && titleMode === "none" ? (
+      {totals.length > 0 && titleMode === "none" ? (
         <MenuBarExtra.Section>
-          <MenuBarExtra.Item
-            title={`Net Total ${netLabel}`}
-            icon={{
-              source: Icon.Calculator,
-              tintColor: net < 0 ? negColor : posColor,
-            }}
-            onAction={async () => {
-              await Clipboard.copy(netLabel);
-              await showHUD(`Copied ${netLabel}`);
-            }}
-          />
+          {totals.map(({ currency, total }) => {
+            const label = formatSignedAmount(total, currency, hideSymbol);
+            return (
+              <MenuBarExtra.Item
+                key={currency}
+                title={`Net Total ${label}`}
+                icon={{
+                  source: Icon.Calculator,
+                  tintColor: total < 0 ? negColor : posColor,
+                }}
+                onAction={async () => {
+                  await Clipboard.copy(label);
+                  await showHUD(`Copied ${label}`);
+                }}
+              />
+            );
+          })}
         </MenuBarExtra.Section>
       ) : null}
 
@@ -539,10 +549,9 @@ export default function Command() {
           );
         }
 
-        if (allTxns.length === 0) return null;
+        if (allTxns.length === 0 || globalTxnCount === 0) return null;
 
-        const limit =
-          globalTxnCount && globalTxnCount > 0 ? globalTxnCount : 15;
+        const limit = globalTxnCount;
         const displayedGlobalTxns = allTxns.slice(0, limit);
         const moreGlobalTxns = allTxns.slice(limit);
 
