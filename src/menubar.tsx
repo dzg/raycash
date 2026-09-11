@@ -437,7 +437,7 @@ export default function Command() {
       icon={
         error
           ? { source: Icon.Warning, tintColor: Color.Red }
-          : { source: Icon.Coins, tintColor: Color.Green }
+          : { source: Icon.Coins, tintColor: posColor }
       }
       title={title}
       isLoading={isLoading}
