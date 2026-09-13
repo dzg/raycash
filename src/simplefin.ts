@@ -1,5 +1,11 @@
 import { createHash } from "crypto";
-import { Cache, Color, getPreferenceValues } from "@raycast/api";
+import {
+  Cache,
+  Color,
+  LaunchType,
+  getPreferenceValues,
+  launchCommand,
+} from "@raycast/api";
 
 /**
  * SimpleFIN Bridge client.
@@ -365,6 +371,27 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
   cache.set(KEY_FETCHED_AT, String(fetchedAt));
 
   return { accounts, errors, fetchedAt, fromCache: false };
+}
+
+/**
+ * Repaints the menu bar extra after data changes underneath it.
+ *
+ * The menu bar holds whatever the menubar command last rendered, and nothing
+ * re-runs that command when another command writes the cache. Refresh Balances
+ * would fetch, stamp its own subtitle with the new time, and leave the menu
+ * showing the previous fetch until the 2h interval came round -- two surfaces
+ * reading one cache and disagreeing about it.
+ *
+ * A background launch re-renders the menu without stealing focus. The user can
+ * disable the Menu Bar command, and launchCommand throws when they have, so a
+ * failed repaint must never turn a successful refresh into an error.
+ */
+export async function repaintMenuBar(): Promise<void> {
+  try {
+    await launchCommand({ name: "menubar", type: LaunchType.Background });
+  } catch {
+    // Menu Bar command disabled or unavailable; nothing to repaint.
+  }
 }
 
 export type ThemeColor = Color | { light: string; dark: string };
