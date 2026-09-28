@@ -406,21 +406,24 @@ function AccountSubmenu({
 
 export default function Command(props: LaunchProps) {
   const prefs = getPrefs();
-  // Each launch gets its own type in props. A scheduled run fetched at
-  // 2:05 PM while the shared environment global read it as user-initiated,
-  // so the global is only the fallback.
+  // A scheduled run fetched at 2:05 PM while the shared environment global
+  // read it as user-initiated. Each launch also gets its own type in props,
+  // so either one saying background is taken at its word.
   const background =
-    (props.launchType ?? environment.launchType) === LaunchType.Background;
+    props.launchType === LaunchType.Background ||
+    environment.launchType === LaunchType.Background;
 
   useEffect(() => {
-    if (environment.isDevelopment) {
+    // Background launches only: every menu open is a launch too, and logging
+    // those buried the one entry worth reading.
+    if (environment.isDevelopment && background) {
       recordLaunch({
         at: Date.now(),
         prop: props.launchType,
         env: environment.launchType,
       });
     }
-  }, [props.launchType]);
+  }, [background, props.launchType]);
 
   const { data, isLoading, error, revalidate } = usePromise(async () => {
     const accountSet = await getAccountSet(background, { background });
@@ -728,16 +731,13 @@ export default function Command(props: LaunchProps) {
               icon={Icon.Hammer}
             />
           ) : null}
-          {launches.length ? (
-            <MenuBarExtra.Submenu title="Recent Launches" icon={Icon.List}>
-              {launches.map((launch, i) => (
-                <MenuBarExtra.Item
-                  key={`${launch.at}-${i}`}
-                  title={`${new Date(launch.at).toLocaleTimeString()}   props: ${launch.prop ?? "none"}   env: ${launch.env ?? "none"}`}
-                />
-              ))}
-            </MenuBarExtra.Submenu>
-          ) : null}
+          {launches.map((launch, i) => (
+            <MenuBarExtra.Item
+              key={`${launch.at}-${i}`}
+              title={`Background launch ${new Date(launch.at).toLocaleTimeString()}   props: ${launch.prop ?? "none"}   env: ${launch.env ?? "none"}`}
+              icon={Icon.Clock}
+            />
+          ))}
         </MenuBarExtra.Section>
       ) : null}
     </MenuBarExtra>
