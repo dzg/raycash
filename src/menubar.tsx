@@ -39,6 +39,7 @@ import {
   requestsToday,
   totalsByCurrency,
   validHostname,
+  lastBackgroundRefresh,
   MAX_REQUESTS_PER_DAY,
 } from "./simplefin";
 
@@ -386,9 +387,8 @@ function AccountSubmenu({
 export default function Command() {
   const prefs = getPrefs();
   const { data, isLoading, error, revalidate } = usePromise(async () => {
-    const accountSet = await getAccountSet(
-      environment.launchType === LaunchType.Background,
-    );
+    const background = environment.launchType === LaunchType.Background;
+    const accountSet = await getAccountSet(background, { background });
     const settings = await LocalStorage.allItems<Record<string, string>>();
     return { ...accountSet, settings };
   });
@@ -456,6 +456,30 @@ export default function Command() {
       await showHUD(`Failed to refresh: ${(err as Error).message}`);
     }
   };
+
+  // One status row. A failed refresh wins while nothing has succeeded since;
+  // otherwise the last background refresh, if it did not work. Opening the
+  // menu fetches for itself, so without it a background refresh that never
+  // works looked the same as one that does.
+  const autoRefresh = lastBackgroundRefresh();
+  const problem = data?.failure
+    ? {
+        label: "Refresh failed",
+        at: data.failure.at,
+        message: data.failure.message,
+      }
+    : autoRefresh?.problem
+      ? {
+          label: "Auto-refresh",
+          at: autoRefresh.at,
+          message: autoRefresh.problem,
+        }
+      : undefined;
+  const autoRefreshLine = autoRefresh
+    ? `Auto-refresh ${formatRefreshTime(autoRefresh.at, dateFormat)}: ${
+        autoRefresh.problem ?? (autoRefresh.done ? "refreshed" : "in progress")
+      }`
+    : "Auto-refresh: none yet";
 
   const title = error
     ? "—"
@@ -632,7 +656,7 @@ export default function Command() {
           <MenuBarExtra.Item
             title={`Last Refreshed: ${formatRefreshTime(data.fetchedAt, dateFormat)}`}
             icon={Icon.Clock}
-            tooltip={`Last refresh: ${new Date(data.fetchedAt).toLocaleString()}\nClick to refresh`}
+            tooltip={`Last refresh: ${new Date(data.fetchedAt).toLocaleString()}\n${autoRefreshLine}\nClick to refresh`}
             onAction={refreshNow}
             alternate={
               <MenuBarExtra.Item
@@ -647,13 +671,13 @@ export default function Command() {
               />
             }
           />
-          {data.failure ? (
+          {problem ? (
             <MenuBarExtra.Item
               title={clip(
-                `Refresh failed ${formatRefreshTime(data.failure.at, dateFormat)}: ${data.failure.message}`,
+                `${problem.label} ${formatRefreshTime(problem.at, dateFormat)}: ${problem.message}`,
               )}
               icon={{ source: Icon.Warning, tintColor: Color.Orange }}
-              tooltip={`${data.failure.message}\nClick to retry`}
+              tooltip={`${problem.message}\nClick to retry`}
               onAction={refreshNow}
             />
           ) : null}

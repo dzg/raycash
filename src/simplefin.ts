@@ -85,6 +85,10 @@ const KEY_ACCESS_HASH = "accessUrlHash";
 const LEGACY_KEY_ACCESS_URL = "accessUrl";
 /** The last failed refresh, cleared by the next successful one. */
 const KEY_LAST_FAILURE = "lastFailure";
+/** How the latest background refresh went, kept apart from manual ones. */
+const KEY_BACKGROUND = "backgroundRefresh";
+/** A request still out after this long was cut off, not merely slow. */
+const STALLED_MS = 5 * 60000;
 
 /**
  * Absolute ceiling on network requests per calendar day, below SimpleFIN's
@@ -169,6 +173,45 @@ function recordFailure(message: string): RefreshFailure {
   const failure = { at: Date.now(), message };
   cache.set(KEY_LAST_FAILURE, JSON.stringify(failure));
   return failure;
+}
+
+export interface BackgroundRefresh {
+  /** Epoch millis of the run. */
+  at: number;
+  /** False while its request is still out. */
+  done: boolean;
+  /** Why it did not refresh, when it did not. */
+  problem?: string;
+}
+
+function noteBackground(done: boolean, problem?: string): void {
+  cache.set(KEY_BACKGROUND, JSON.stringify({ at: Date.now(), done, problem }));
+}
+
+/**
+ * How the latest background refresh went.
+ *
+ * Kept apart from the failure record because opening the menu fetches for
+ * itself, and when that works it clears the failure. A background refresh
+ * that never succeeded looked no different from one that did.
+ */
+export function lastBackgroundRefresh(): BackgroundRefresh | undefined {
+  const raw = cache.get(KEY_BACKGROUND);
+  if (!raw) return undefined;
+  try {
+    const run = JSON.parse(raw) as BackgroundRefresh;
+    // A run stopped mid-fetch never gets to write how it ended.
+    if (!run.done && Date.now() - run.at > STALLED_MS) {
+      return {
+        ...run,
+        done: true,
+        problem: "stopped before SimpleFIN answered",
+      };
+    }
+    return run;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The last failed refresh, if it came after the data fetched at `since`. */
@@ -284,7 +327,15 @@ function shouldFetch(force: boolean, minIntervalMinutes: number): boolean {
  * Returns the current account set, hitting the network only when the cache is
  * stale enough and the daily quota allows it.
  */
-export async function getAccountSet(force = false): Promise<AccountSet> {
+export async function getAccountSet(
+  force = false,
+  {
+    background = false,
+  }: {
+    /** A scheduled background launch, whose outcome is kept for the menu. */
+    background?: boolean;
+  } = {},
+): Promise<AccountSet> {
   const prefs = getPrefs();
   const minInterval = numberPref(prefs.minIntervalMinutes, 90);
 
@@ -332,6 +383,13 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
   }
 
   if (!shouldFetch(force, minInterval)) {
+    // Skipping because the data is fresh is no news. Skipping at the cap is.
+    if (background && requestsToday() >= MAX_REQUESTS_PER_DAY) {
+      noteBackground(
+        true,
+        `skipped, daily limit of ${MAX_REQUESTS_PER_DAY} requests reached`,
+      );
+    }
     if (cachedForFetch) {
       return {
         ...cachedForFetch,
@@ -353,6 +411,14 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
 
   const { url, headers } = buildRequest(accessUrl, daysToFetch);
 
+  const fail = (message: string): RefreshFailure => {
+    if (background) noteBackground(true, message);
+    return recordFailure(message);
+  };
+
+  // Marked before the request so a run killed mid-fetch still leaves a trace.
+  if (background) noteBackground(false);
+
   let response: Response;
   try {
     bumpCounter();
@@ -362,7 +428,7 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
     const cause = (err as { cause?: { code?: string; message?: string } })
       .cause;
     if (cause?.code && NEVER_SENT.has(cause.code)) refundCounter();
-    const failure = recordFailure(
+    const failure = fail(
       `Could not reach SimpleFIN: ${cause?.message ?? (err as Error).message}`,
     );
     const cached = readCache();
@@ -371,14 +437,14 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
   }
 
   if (response.status === 403) {
-    const failure = recordFailure(
+    const failure = fail(
       "SimpleFIN rejected the credentials (403). The Access URL may have been revoked.",
     );
     throw new Error(failure.message);
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    const failure = recordFailure(
+    const failure = fail(
       `SimpleFIN returned ${response.status}.${detail ? ` ${detail.slice(0, 300)}` : ""}`,
     );
     const cached = readCache();
@@ -386,10 +452,17 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
     throw new Error(failure.message);
   }
 
-  const body = (await response.json()) as {
-    accounts?: SimpleFinAccount[];
-    errors?: string[];
-  };
+  let body: { accounts?: SimpleFinAccount[]; errors?: string[] };
+  try {
+    body = await response.json();
+  } catch (err) {
+    const failure = fail(
+      `SimpleFIN sent an unreadable response: ${(err as Error).message}`,
+    );
+    const cached = readCache();
+    if (cached) return { ...cached, fromCache: true, failure };
+    throw new Error(failure.message);
+  }
   const accounts = body.accounts ?? [];
   const errors = body.errors ?? [];
   const fetchedAt = Date.now();
@@ -461,6 +534,7 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
   cache.set(KEY_PAYLOAD, JSON.stringify({ accounts, errors }));
   cache.set(KEY_FETCHED_AT, String(fetchedAt));
   cache.remove(KEY_LAST_FAILURE);
+  if (background) noteBackground(true);
 
   return { accounts, errors, fetchedAt, fromCache: false };
 }
