@@ -85,10 +85,17 @@ const KEY_ACCESS_HASH = "accessUrlHash";
 const LEGACY_KEY_ACCESS_URL = "accessUrl";
 /** The last failed refresh, cleared by the next successful one. */
 const KEY_LAST_FAILURE = "lastFailure";
-/** How the latest background refresh went, kept apart from manual ones. */
-const KEY_BACKGROUND = "backgroundRefresh";
+/** How the latest launch of the menu bar command went, whoever started it. */
+const KEY_LAST_RUN = "lastRun";
 /** A request still out after this long was cut off, not merely slow. */
 const STALLED_MS = 5 * 60000;
+/**
+ * How long a request may take before it counts as failed. Without a limit a
+ * request that never answers keeps the menu bar command running until Raycast
+ * kills it, and a killed run leaves the command in a state from which the
+ * next scheduled launch may not come.
+ */
+export const REQUEST_TIMEOUT_MS = 45000;
 
 /**
  * Absolute ceiling on network requests per calendar day, below SimpleFIN's
@@ -175,36 +182,51 @@ function recordFailure(message: string): RefreshFailure {
   return failure;
 }
 
-export interface BackgroundRefresh {
+/** What a launch of the menu bar command did about the data. */
+export type RunOutcome =
+  /** Its request is still out. */
+  | "fetching"
+  /** It fetched and the cache holds the result. */
+  | "refreshed"
+  /** The cache was fresh enough, so no request went out. */
+  | "cached"
+  /** The request went out and did not deliver. */
+  | "failed"
+  /** The daily request limit refused it. */
+  | "capped";
+
+export interface MenuRun {
   /** Epoch millis of the run. */
   at: number;
-  /** False while its request is still out. */
-  done: boolean;
+  outcome: RunOutcome;
   /** Why it did not refresh, when it did not. */
   problem?: string;
 }
 
-function noteBackground(done: boolean, problem?: string): void {
-  cache.set(KEY_BACKGROUND, JSON.stringify({ at: Date.now(), done, problem }));
+function noteRun(outcome: RunOutcome, problem?: string): void {
+  cache.set(KEY_LAST_RUN, JSON.stringify({ at: Date.now(), outcome, problem }));
 }
 
 /**
- * How the latest background refresh went.
+ * How the latest launch of the menu bar command went.
  *
- * Kept apart from the failure record because opening the menu fetches for
- * itself, and when that works it clears the failure. A background refresh
- * that never succeeded looked no different from one that did.
+ * Every launch is recorded, whether Raycast scheduled it or the user opened
+ * the menu, because Raycast's launch labels have not told the two apart: a
+ * scheduled run once arrived labelled user-initiated. The record answers
+ * "when did the command last run, and did it refresh?" without trusting a
+ * label. Kept apart from the failure record because opening the menu fetches
+ * for itself, and when that works it clears the failure.
  */
-export function lastBackgroundRefresh(): BackgroundRefresh | undefined {
-  const raw = cache.get(KEY_BACKGROUND);
+export function lastRun(): MenuRun | undefined {
+  const raw = cache.get(KEY_LAST_RUN);
   if (!raw) return undefined;
   try {
-    const run = JSON.parse(raw) as BackgroundRefresh;
+    const run = JSON.parse(raw) as MenuRun;
     // A run stopped mid-fetch never gets to write how it ended.
-    if (!run.done && Date.now() - run.at > STALLED_MS) {
+    if (run.outcome === "fetching" && Date.now() - run.at > STALLED_MS) {
       return {
         ...run,
-        done: true,
+        outcome: "failed",
         problem: "stopped before SimpleFIN answered",
       };
     }
@@ -369,10 +391,10 @@ function shouldFetch(force: boolean, minIntervalMinutes: number): boolean {
  * first render, before usePromise has started, to show a syncing icon only
  * when a real fetch is underway rather than on every launch.
  */
-export function refreshPending(force = false): boolean {
+export function refreshPending(): boolean {
   const prefs = getPrefs();
   if (!prefs.accessUrl?.trim()) return false;
-  return shouldFetch(force, numberPref(prefs.minIntervalMinutes, 90));
+  return shouldFetch(false, numberPref(prefs.minIntervalMinutes, 90));
 }
 
 /** The menu bar title as last rendered, so a launch does not blank it. */
@@ -394,10 +416,15 @@ export function lastTitle(): string | undefined {
 export async function getAccountSet(
   force = false,
   {
-    background = false,
+    launch = false,
   }: {
-    /** A scheduled background launch, whose outcome is kept for the menu. */
-    background?: boolean;
+    /**
+     * A launch of the menu bar command, scheduled or not, whose outcome is
+     * kept for the menu. Launches never force: whether Raycast labels one
+     * background or user-initiated, it fetches only once the cache is older
+     * than the minimum interval, so a short schedule cannot spend the quota.
+     */
+    launch?: boolean;
   } = {},
 ): Promise<AccountSet> {
   const prefs = getPrefs();
@@ -447,12 +474,15 @@ export async function getAccountSet(
   }
 
   if (!shouldFetch(force, minInterval)) {
-    // Skipping because the data is fresh is no news. Skipping at the cap is.
-    if (background && requestsToday() >= MAX_REQUESTS_PER_DAY) {
-      noteBackground(
-        true,
-        `skipped, daily limit of ${MAX_REQUESTS_PER_DAY} requests reached`,
-      );
+    if (launch) {
+      if (requestsToday() >= MAX_REQUESTS_PER_DAY) {
+        noteRun(
+          "capped",
+          `skipped, daily limit of ${MAX_REQUESTS_PER_DAY} requests reached`,
+        );
+      } else {
+        noteRun("cached");
+      }
     }
     if (cachedForFetch) {
       return {
@@ -476,19 +506,31 @@ export async function getAccountSet(
   const { url, headers } = buildRequest(accessUrl, daysToFetch);
 
   const fail = (message: string): RefreshFailure => {
-    if (background) noteBackground(true, message);
+    if (launch) noteRun("failed", message);
     return recordFailure(message);
   };
 
   // Marked before the request so a run killed mid-fetch still leaves a trace.
-  if (background) noteBackground(false);
+  if (launch) noteRun("fetching");
 
   let response: Response;
   try {
     bumpCounter();
-    response = await fetch(url, { headers });
+    response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
   } catch (err) {
-    // fetch only says "fetch failed"; the reason is on its cause.
+    // The timeout is the signal's own error; fetch's says only "fetch failed"
+    // and keeps the reason on its cause.
+    if ((err as Error).name === "TimeoutError") {
+      const failure = fail(
+        `SimpleFIN did not answer within ${REQUEST_TIMEOUT_MS / 1000} seconds`,
+      );
+      const cached = readCache();
+      if (cached) return { ...cached, fromCache: true, failure };
+      throw new Error(failure.message);
+    }
     const cause = (err as { cause?: { code?: string; message?: string } })
       .cause;
     if (cause?.code && NEVER_SENT.has(cause.code)) refundCounter();
@@ -598,7 +640,7 @@ export async function getAccountSet(
   cache.set(KEY_PAYLOAD, JSON.stringify({ accounts, errors }));
   cache.set(KEY_FETCHED_AT, String(fetchedAt));
   cache.remove(KEY_LAST_FAILURE);
-  if (background) noteBackground(true);
+  if (launch) noteRun("refreshed");
 
   return { accounts, errors, fetchedAt, fromCache: false };
 }
@@ -609,7 +651,7 @@ export async function getAccountSet(
  * The menu bar holds whatever the menubar command last rendered, and nothing
  * re-runs that command when another command writes the cache. Refresh Balances
  * would fetch, stamp its own subtitle with the new time, and leave the menu
- * showing the previous fetch until the 2h interval came round -- two surfaces
+ * showing the previous fetch until the next scheduled launch -- two surfaces
  * reading one cache and disagreeing about it.
  *
  * A background launch re-renders the menu without stealing focus. The user can

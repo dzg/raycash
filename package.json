@@ -21,7 +21,7 @@
       "title": "Menu Bar",
       "description": "Balances and recent transactions in the macOS menu bar.",
       "mode": "menu-bar",
-      "interval": "2h"
+      "interval": "15m"
     },
     {
       "name": "accounts",

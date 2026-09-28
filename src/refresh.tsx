@@ -24,9 +24,9 @@ export default async function Command() {
 
     // Update the other surface too, so the menu bar and this subtitle agree.
     // Only after a real fetch: it just reset the cache age to zero, so the
-    // repaint's forced getAccountSet serves the cache. A cached result can be
-    // a failed fetch, whose cache is still old enough that the repaint would
-    // go straight back to the network for a second attempt.
+    // repaint's launch serves the cache. A cached result can be a failed
+    // fetch, whose cache is still old enough that the repaint would go
+    // straight back to the network for a second attempt.
     if (!accountSet.fromCache) await repaintMenuBar();
 
     if (accountSet.fromCache) {

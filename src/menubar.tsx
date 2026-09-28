@@ -3,7 +3,6 @@ import {
   Color,
   Icon,
   LaunchProps,
-  LaunchType,
   LocalStorage,
   MenuBarExtra,
   environment,
@@ -42,7 +41,7 @@ import {
   requestsToday,
   totalsByCurrency,
   validHostname,
-  lastBackgroundRefresh,
+  lastRun,
   lastTitle,
   recentLaunches,
   recordLaunch,
@@ -409,13 +408,11 @@ function AccountSubmenu({
 
 export default function Command(props: LaunchProps) {
   const prefs = getPrefs();
-  // A scheduled run fetched at 2:05 PM while the shared environment global
-  // read it as user-initiated. Each launch also gets its own type in props,
-  // so either one saying background is taken at its word.
-  const background =
-    props.launchType === LaunchType.Background ||
-    environment.launchType === LaunchType.Background;
-
+  // Raycast's launch labels decide nothing here. A scheduled run once arrived
+  // labelled user-initiated, and a launch of any kind fetches only once the
+  // cache is older than the minimum interval, so the label cannot cost quota
+  // either. Development logs it, since whether scheduled runs happen at all
+  // is the open question.
   useEffect(() => {
     if (environment.isDevelopment) {
       recordLaunch({
@@ -427,7 +424,7 @@ export default function Command(props: LaunchProps) {
   }, [props.launchType]);
 
   const { data, isLoading, error, revalidate } = usePromise(async () => {
-    const accountSet = await getAccountSet(background, { background });
+    const accountSet = await getAccountSet(false, { launch: true });
     const settings = await LocalStorage.allItems<Record<string, string>>();
     return { ...accountSet, settings };
   });
@@ -497,10 +494,9 @@ export default function Command(props: LaunchProps) {
   };
 
   // One status row. A failed refresh wins while nothing has succeeded since;
-  // otherwise the last background refresh, if it did not work. Opening the
-  // menu fetches for itself, so without it a background refresh that never
-  // works looked the same as one that does.
-  const autoRefresh = lastBackgroundRefresh();
+  // otherwise the last launch, if it did not work for a reason no failure
+  // records: the daily cap, or a run cut off before it could write one.
+  const run = lastRun();
   const launches = environment.isDevelopment ? recentLaunches() : [];
   const problem = data?.failure
     ? {
@@ -508,18 +504,24 @@ export default function Command(props: LaunchProps) {
         at: data.failure.at,
         message: data.failure.message,
       }
-    : autoRefresh?.problem
-      ? {
-          label: "Auto-refresh",
-          at: autoRefresh.at,
-          message: autoRefresh.problem,
-        }
+    : run?.problem
+      ? { label: "Last run", at: run.at, message: run.problem }
       : undefined;
-  const autoRefreshLine = autoRefresh
-    ? `Auto-refresh ${formatRefreshTime(autoRefresh.at, dateFormat)}: ${
-        autoRefresh.problem ?? (autoRefresh.done ? "refreshed" : "in progress")
+  // When the command last ran, whoever launched it, and what it did. Against
+  // "Last Refreshed" this shows whether it runs by itself: a run later than
+  // the last time the menu was opened was Raycast's.
+  const runLine = run
+    ? `Last run ${formatRefreshTime(run.at, dateFormat)}: ${
+        run.problem ??
+        {
+          fetching: "request in progress",
+          refreshed: "refreshed",
+          cached: "cache still fresh, no request",
+          failed: "failed",
+          capped: "daily limit reached",
+        }[run.outcome]
       }`
-    : "Auto-refresh: none yet";
+    : "Last run: none recorded";
 
   const title = error
     ? "—"
@@ -532,7 +534,7 @@ export default function Command(props: LaunchProps) {
   // A launch renders once before usePromise runs, with no data. If that render
   // is going to fetch, say so in the menu bar and keep the last total on show
   // instead of blanking it for the length of the request.
-  const syncing = isLoading && !data && refreshPending(background);
+  const syncing = isLoading && !data && refreshPending();
   const shownTitle = syncing
     ? titleMode === "none"
       ? undefined
@@ -712,7 +714,7 @@ export default function Command(props: LaunchProps) {
           <MenuBarExtra.Item
             title={`Last Refreshed: ${formatRefreshTime(data.fetchedAt, dateFormat)}`}
             icon={Icon.Clock}
-            tooltip={`Last refresh: ${new Date(data.fetchedAt).toLocaleString()}\n${autoRefreshLine}\nClick to refresh`}
+            tooltip={`Last refresh: ${new Date(data.fetchedAt).toLocaleString()}\n${runLine}\nClick to refresh`}
             onAction={refreshNow}
             alternate={
               <MenuBarExtra.Item
