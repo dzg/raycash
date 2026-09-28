@@ -11,6 +11,7 @@ import {
   showHUD,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
+import { statSync } from "fs";
 import {
   AmountWidth,
   SimpleFinAccount,
@@ -42,6 +43,21 @@ import {
   lastBackgroundRefresh,
   MAX_REQUESTS_PER_DAY,
 } from "./simplefin";
+
+/**
+ * When this bundle was written, shown in development only. A menu drawn by an
+ * older build looks the same as one drawn by the current build, so a stale
+ * build could otherwise pass for a failed fix.
+ */
+const BUILT_AT = (() => {
+  try {
+    return typeof __filename === "string"
+      ? statSync(__filename).mtime
+      : undefined;
+  } catch {
+    return undefined;
+  }
+})();
 
 const DEFAULT_POS = { light: "#0f0", dark: "#0f0" };
 const DEFAULT_NEG = { light: "#f00", dark: "#f00" };
@@ -681,6 +697,15 @@ export default function Command() {
               onAction={refreshNow}
             />
           ) : null}
+        </MenuBarExtra.Section>
+      ) : null}
+
+      {environment.isDevelopment && BUILT_AT ? (
+        <MenuBarExtra.Section>
+          <MenuBarExtra.Item
+            title={`Dev build ${BUILT_AT.toLocaleString()}`}
+            icon={Icon.Hammer}
+          />
         </MenuBarExtra.Section>
       ) : null}
     </MenuBarExtra>
