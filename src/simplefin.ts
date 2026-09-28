@@ -53,6 +53,12 @@ export interface SimpleFinAccount {
   transactions?: SimpleFinTransaction[];
 }
 
+export interface RefreshFailure {
+  /** Epoch millis of the failed attempt. */
+  at: number;
+  message: string;
+}
+
 export interface AccountSet {
   errors: string[];
   accounts: SimpleFinAccount[];
@@ -60,6 +66,12 @@ export interface AccountSet {
   fetchedAt: number;
   /** True when this came from cache rather than a fresh request. */
   fromCache: boolean;
+  /**
+   * The latest refresh attempt, when it failed after this data was fetched.
+   * A failed refresh serves the cache, so without this the menu went on
+   * showing old balances with nothing to say a refresh had been tried.
+   */
+  failure?: RefreshFailure;
 }
 
 const cache = new Cache({ namespace: "simplefin" });
@@ -71,6 +83,8 @@ const KEY_COUNTER = "counter";
 const KEY_ACCESS_HASH = "accessUrlHash";
 /** Older builds cached the Access URL itself, in plain text. */
 const LEGACY_KEY_ACCESS_URL = "accessUrl";
+/** The last failed refresh, cleared by the next successful one. */
+const KEY_LAST_FAILURE = "lastFailure";
 
 /**
  * Absolute ceiling on network requests per calendar day, below SimpleFIN's
@@ -126,6 +140,47 @@ function readCounter(): Counter {
 function bumpCounter(): void {
   const c = readCounter();
   cache.set(KEY_COUNTER, JSON.stringify({ day: c.day, count: c.count + 1 }));
+}
+
+/**
+ * Failures raised before a connection exists: no network yet after wake, DNS
+ * down, nothing listening. The request never left the Mac, so SimpleFIN never
+ * counted it, and neither should the daily cap.
+ */
+const NEVER_SENT = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ENETDOWN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+function refundCounter(): void {
+  const c = readCounter();
+  cache.set(
+    KEY_COUNTER,
+    JSON.stringify({ day: c.day, count: Math.max(0, c.count - 1) }),
+  );
+}
+
+function recordFailure(message: string): RefreshFailure {
+  const failure = { at: Date.now(), message };
+  cache.set(KEY_LAST_FAILURE, JSON.stringify(failure));
+  return failure;
+}
+
+/** The last failed refresh, if it came after the data fetched at `since`. */
+function readFailure(since: number): RefreshFailure | undefined {
+  const raw = cache.get(KEY_LAST_FAILURE);
+  if (!raw) return undefined;
+  try {
+    const failure = JSON.parse(raw) as RefreshFailure;
+    return failure.at > since ? failure : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function resetCounter(): void {
@@ -252,6 +307,7 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
     cache.remove(KEY_PAYLOAD);
     cache.remove(KEY_FETCHED_AT);
     cache.remove(KEY_COUNTER);
+    cache.remove(KEY_LAST_FAILURE);
     if (accessHash) {
       cache.set(KEY_ACCESS_HASH, accessHash);
     } else {
@@ -277,7 +333,11 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
 
   if (!shouldFetch(force, minInterval)) {
     if (cachedForFetch) {
-      return { ...cachedForFetch, fromCache: true };
+      return {
+        ...cachedForFetch,
+        fromCache: true,
+        failure: readFailure(cachedForFetch.fetchedAt),
+      };
     }
     // With nothing cached, only the daily cap refuses a fetch.
     throw new Error(
@@ -298,23 +358,32 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
     bumpCounter();
     response = await fetch(url, { headers });
   } catch (err) {
+    // fetch only says "fetch failed"; the reason is on its cause.
+    const cause = (err as { cause?: { code?: string; message?: string } })
+      .cause;
+    if (cause?.code && NEVER_SENT.has(cause.code)) refundCounter();
+    const failure = recordFailure(
+      `Could not reach SimpleFIN: ${cause?.message ?? (err as Error).message}`,
+    );
     const cached = readCache();
-    if (cached) return { ...cached, fromCache: true };
-    throw new Error(`Could not reach SimpleFIN: ${(err as Error).message}`);
+    if (cached) return { ...cached, fromCache: true, failure };
+    throw new Error(failure.message);
   }
 
   if (response.status === 403) {
-    throw new Error(
+    const failure = recordFailure(
       "SimpleFIN rejected the credentials (403). The Access URL may have been revoked.",
     );
+    throw new Error(failure.message);
   }
   if (!response.ok) {
-    const cached = readCache();
-    if (cached) return { ...cached, fromCache: true };
     const detail = await response.text().catch(() => "");
-    throw new Error(
+    const failure = recordFailure(
       `SimpleFIN returned ${response.status}.${detail ? ` ${detail.slice(0, 300)}` : ""}`,
     );
+    const cached = readCache();
+    if (cached) return { ...cached, fromCache: true, failure };
+    throw new Error(failure.message);
   }
 
   const body = (await response.json()) as {
@@ -391,6 +460,7 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
 
   cache.set(KEY_PAYLOAD, JSON.stringify({ accounts, errors }));
   cache.set(KEY_FETCHED_AT, String(fetchedAt));
+  cache.remove(KEY_LAST_FAILURE);
 
   return { accounts, errors, fetchedAt, fromCache: false };
 }

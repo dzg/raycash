@@ -45,6 +45,11 @@ import {
 const DEFAULT_POS = { light: "#0f0", dark: "#0f0" };
 const DEFAULT_NEG = { light: "#f00", dark: "#f00" };
 
+/** A menu is as wide as its longest row, so long messages are clipped here. */
+function clip(text: string, max = 90): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 function accountIcon(
   amount: number,
   posColor: ThemeColor,
@@ -428,6 +433,30 @@ export default function Command() {
     .map((t) => formatSignedAmount(t.total, t.currency, hideSymbol, 0))
     .join("  ");
 
+  // A failed fetch also comes back as cached data, and used to be announced as
+  // "up to date", so the HUD tells the outcomes apart.
+  const refreshNow = async () => {
+    try {
+      await showHUD("Refreshing balances...");
+      const started = Date.now();
+      const res = await getAccountSet(true);
+      revalidate();
+      if (!res.fromCache) {
+        await showHUD("Balances refreshed successfully");
+      } else if (res.failure && res.failure.at >= started) {
+        await showHUD(`Refresh failed: ${res.failure.message}`);
+      } else if (requestsToday() >= MAX_REQUESTS_PER_DAY) {
+        await showHUD(
+          `Daily request limit reached (${MAX_REQUESTS_PER_DAY}), showing cached balances`,
+        );
+      } else {
+        await showHUD("Balances up to date (cached < 20m ago)");
+      }
+    } catch (err) {
+      await showHUD(`Failed to refresh: ${(err as Error).message}`);
+    }
+  };
+
   const title = error
     ? "—"
     : titleMode === "none"
@@ -604,24 +633,7 @@ export default function Command() {
             title={`Last Refreshed: ${formatRefreshTime(data.fetchedAt, dateFormat)}`}
             icon={Icon.Clock}
             tooltip={`Last refresh: ${new Date(data.fetchedAt).toLocaleString()}\nClick to refresh`}
-            onAction={async () => {
-              try {
-                await showHUD("Refreshing balances...");
-                const res = await getAccountSet(true);
-                revalidate();
-                if (res.fromCache) {
-                  await showHUD(
-                    requestsToday() >= MAX_REQUESTS_PER_DAY
-                      ? `Daily request limit reached (${MAX_REQUESTS_PER_DAY}), showing cached balances`
-                      : "Balances up to date (cached < 20m ago)",
-                  );
-                } else {
-                  await showHUD("Balances refreshed successfully");
-                }
-              } catch (err) {
-                await showHUD(`Failed to refresh: ${(err as Error).message}`);
-              }
-            }}
+            onAction={refreshNow}
             alternate={
               <MenuBarExtra.Item
                 title={`Copy Timestamp: ${formatRefreshTime(data.fetchedAt, dateFormat)}`}
@@ -635,6 +647,16 @@ export default function Command() {
               />
             }
           />
+          {data.failure ? (
+            <MenuBarExtra.Item
+              title={clip(
+                `Refresh failed ${formatRefreshTime(data.failure.at, dateFormat)}: ${data.failure.message}`,
+              )}
+              icon={{ source: Icon.Warning, tintColor: Color.Orange }}
+              tooltip={`${data.failure.message}\nClick to retry`}
+              onAction={refreshNow}
+            />
+          ) : null}
         </MenuBarExtra.Section>
       ) : null}
     </MenuBarExtra>

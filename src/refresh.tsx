@@ -14,6 +14,7 @@ export default async function Command() {
   });
 
   try {
+    const started = Date.now();
     const accountSet = await getAccountSet(true);
     const calls = requestsToday();
     const timeStr = formatRefreshTime(accountSet.fetchedAt);
@@ -22,16 +23,18 @@ export default async function Command() {
     });
 
     // Update the other surface too, so the menu bar and this subtitle agree.
-    // Safe against the quota whichever way the call above went: the repaint
-    // re-enters getAccountSet, and it cannot reach the network here. A real
-    // fetch just reset the cache age to zero, and a cached result means the
-    // age was already under the 20 minute floor or the daily cap was spent --
-    // all three make shouldFetch decline.
-    await repaintMenuBar();
+    // Only after a real fetch: it just reset the cache age to zero, so the
+    // repaint's forced getAccountSet serves the cache. A cached result can be
+    // a failed fetch, whose cache is still old enough that the repaint would
+    // go straight back to the network for a second attempt.
+    if (!accountSet.fromCache) await repaintMenuBar();
 
     if (accountSet.fromCache) {
       toast.style = Toast.Style.Failure;
-      if (calls >= MAX_REQUESTS_PER_DAY) {
+      if (accountSet.failure && accountSet.failure.at >= started) {
+        toast.title = "Refresh failed, showing cached balances";
+        toast.message = accountSet.failure.message;
+      } else if (calls >= MAX_REQUESTS_PER_DAY) {
         toast.title = `Daily API limit reached (${calls} / ${MAX_REQUESTS_PER_DAY})`;
         toast.message =
           "Requests are capped to protect your SimpleFIN quota. The count resets at midnight UTC.";
