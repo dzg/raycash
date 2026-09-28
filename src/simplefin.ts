@@ -215,10 +215,12 @@ export function lastBackgroundRefresh(): BackgroundRefresh | undefined {
 }
 
 /**
- * Development only: how Raycast labelled recent background launches. A new
- * key, so the old log of every launch is left behind rather than shown.
+ * Development only: every recent menu bar launch and how Raycast labelled it.
+ * All launches, not just those labelled background: a scheduled run labelled
+ * user-initiated would otherwise leave no trace, and whether scheduled runs
+ * happen at all is the question. A new key starts it clean.
  */
-const KEY_LAUNCHES = "backgroundLaunches";
+const KEY_LAUNCHES = "launchLog";
 
 export interface LaunchRecord {
   at: number;
@@ -240,7 +242,7 @@ export function recordLaunch(entry: LaunchRecord): void {
   ) {
     return;
   }
-  cache.set(KEY_LAUNCHES, JSON.stringify([entry, ...log].slice(0, 3)));
+  cache.set(KEY_LAUNCHES, JSON.stringify([entry, ...log].slice(0, 12)));
 }
 
 export function recentLaunches(): LaunchRecord[] {

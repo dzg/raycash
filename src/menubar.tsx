@@ -414,16 +414,14 @@ export default function Command(props: LaunchProps) {
     environment.launchType === LaunchType.Background;
 
   useEffect(() => {
-    // Background launches only: every menu open is a launch too, and logging
-    // those buried the one entry worth reading.
-    if (environment.isDevelopment && background) {
+    if (environment.isDevelopment) {
       recordLaunch({
         at: Date.now(),
         prop: props.launchType,
         env: environment.launchType,
       });
     }
-  }, [background, props.launchType]);
+  }, [props.launchType]);
 
   const { data, isLoading, error, revalidate } = usePromise(async () => {
     const accountSet = await getAccountSet(background, { background });
@@ -731,13 +729,16 @@ export default function Command(props: LaunchProps) {
               icon={Icon.Hammer}
             />
           ) : null}
-          {launches.map((launch, i) => (
-            <MenuBarExtra.Item
-              key={`${launch.at}-${i}`}
-              title={`Background launch ${new Date(launch.at).toLocaleTimeString()}   props: ${launch.prop ?? "none"}   env: ${launch.env ?? "none"}`}
-              icon={Icon.Clock}
-            />
-          ))}
+          {launches.length ? (
+            <MenuBarExtra.Submenu title="Launch Log" icon={Icon.List}>
+              {launches.map((launch, i) => (
+                <MenuBarExtra.Item
+                  key={`${launch.at}-${i}`}
+                  title={`${new Date(launch.at).toLocaleTimeString()}   props: ${launch.prop ?? "none"}   env: ${launch.env ?? "none"}`}
+                />
+              ))}
+            </MenuBarExtra.Submenu>
+          ) : null}
         </MenuBarExtra.Section>
       ) : null}
     </MenuBarExtra>
