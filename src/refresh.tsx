@@ -18,7 +18,7 @@ export default async function Command() {
     const calls = requestsToday();
     const timeStr = formatRefreshTime(accountSet.fetchedAt);
     await updateCommandMetadata({
-      subtitle: `Last Refreshed: ${timeStr} • API Calls Today: ${calls} / 18`,
+      subtitle: `Last Refreshed: ${timeStr} • API Calls Today: ${calls} / ${MAX_REQUESTS_PER_DAY}`,
     });
 
     // Update the other surface too, so the menu bar and this subtitle agree.
@@ -31,13 +31,10 @@ export default async function Command() {
 
     if (accountSet.fromCache) {
       toast.style = Toast.Style.Failure;
-      if (calls >= 24) {
-        toast.title = "Daily API limit reached (24 / 24)";
+      if (calls >= MAX_REQUESTS_PER_DAY) {
+        toast.title = `Daily API limit reached (${calls} / ${MAX_REQUESTS_PER_DAY})`;
         toast.message =
-          "SimpleFIN hard daily limit reached. Please wait until tomorrow.";
-      } else if (calls >= MAX_REQUESTS_PER_DAY) {
-        toast.title = "Daily API limit reached (18 / 18)";
-        toast.message = "Requests are capped to protect your SimpleFIN quota.";
+          "Requests are capped to protect your SimpleFIN quota. The count resets at midnight UTC.";
       } else {
         const minsAgo = Math.round((Date.now() - accountSet.fetchedAt) / 60000);
         toast.title = `Recently refreshed (${minsAgo}m ago)`;

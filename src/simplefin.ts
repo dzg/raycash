@@ -72,7 +72,10 @@ const KEY_ACCESS_HASH = "accessUrlHash";
 /** Older builds cached the Access URL itself, in plain text. */
 const LEGACY_KEY_ACCESS_URL = "accessUrl";
 
-/** Absolute ceiling on network requests per calendar day, below SimpleFIN's ~24. */
+/**
+ * Absolute ceiling on network requests per calendar day, below SimpleFIN's
+ * ~24. Forced refreshes count against it like any other request.
+ */
 export const MAX_REQUESTS_PER_DAY = 18;
 /** Even a forced refresh will not fire more often than this. */
 const FORCE_FLOOR_MINUTES = 20;
@@ -133,18 +136,36 @@ export function requestsToday(): number {
   return readCounter().count;
 }
 
+/** Parses `value` as a URL, returning it only when it is HTTPS. */
+function httpsUrl(value: string): URL | undefined {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Splits the Access URL into an endpoint and an Authorization header.
  *
  * The Access URL arrives as https://user:pass@host/simplefin. Node's fetch
  * does not reliably forward userinfo embedded in a URL, so the credentials are
  * extracted and sent as an explicit Basic auth header instead.
+ *
+ * Those credentials read every linked account, so anything but HTTPS is
+ * refused before they are extracted, let alone sent.
  */
 function buildRequest(
   accessUrl: string,
   days: number,
 ): { url: string; headers: Record<string, string> } {
-  const parsed = new URL(accessUrl.trim());
+  const parsed = httpsUrl(accessUrl);
+  if (!parsed) {
+    throw new Error(
+      "The SimpleFIN Access URL must be an https:// URL. Paste the one Set Up SimpleFIN gave you.",
+    );
+  }
   const username = decodeURIComponent(parsed.username);
   const password = decodeURIComponent(parsed.password);
   parsed.username = "";
@@ -192,7 +213,8 @@ function readCache():
 function shouldFetch(force: boolean, minIntervalMinutes: number): boolean {
   // The cap comes first. Checked after the cache, a fresh install whose
   // requests keep failing would retry on every launch with no ceiling at all.
-  if (requestsToday() >= (force ? 24 : MAX_REQUESTS_PER_DAY)) return false;
+  // Forcing only shortens the interval; it never buys requests past the cap.
+  if (requestsToday() >= MAX_REQUESTS_PER_DAY) return false;
 
   const cached = readCache();
   if (!cached) return true;
@@ -263,7 +285,7 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
     );
   }
 
-  if (!accessUrl || !accessUrl.includes("://")) {
+  if (!accessUrl) {
     throw new Error(
       "No SimpleFIN Access URL configured. Add it in extension preferences.",
     );
@@ -838,6 +860,25 @@ export function totalsByCurrency(
   );
 }
 
+const HOST_LABEL = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+/** Dot-separated labels ending in a TLD that starts with a letter, so no IPs. */
+const HOSTNAME = new RegExp(
+  `^(?:${HOST_LABEL}\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])$`,
+);
+
+/**
+ * The value as a bare hostname, or undefined when it is anything else.
+ *
+ * An institution's domain arrives from the bridge and becomes a URL the
+ * browser opens. Spliced in unchecked, "bank.example@evil.example" is a login
+ * to evil.example, so only plain hostnames are accepted: no userinfo, port,
+ * path or IP address.
+ */
+export function validHostname(value?: string): string | undefined {
+  const host = (value ?? "").trim().toLowerCase();
+  return host.length <= 253 && HOSTNAME.test(host) ? host : undefined;
+}
+
 export function relativeTime(epochMillis: number): string {
   const minutes = Math.round((Date.now() - epochMillis) / 60000);
   if (minutes < 1) return "just now";
@@ -930,8 +971,9 @@ export function formatRefreshTime(
   const format =
     (customDateFormat ?? getPrefs().prefDateFormat)?.trim() ||
     DEFAULT_DATE_FORMAT;
-  // A format carrying its own hour field already reads as a time.
-  if (format.includes("h") || format.includes("H")) {
+  // A format carrying its own hour field already reads as a time. Quoted
+  // spans are literal text to formatDate, so an 'h' inside one is no hour.
+  if (/[hH]/.test(format.replace(/'[^']*'/g, ""))) {
     return formatDate(epochSeconds, format);
   }
 
@@ -1235,32 +1277,47 @@ export function searchScore(
   return best;
 }
 
+/** Setup tokens are only ever claimed against SimpleFIN Bridge. */
+const BRIDGE_DOMAIN = "simplefin.org";
+
+function isBridgeHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === BRIDGE_DOMAIN || host.endsWith(`.${BRIDGE_DOMAIN}`);
+}
+
 /**
  * Claims a SimpleFIN setup token and returns the Access URL.
  *
  * The token is a base64-encoded claim URL; POSTing to it once returns the
  * permanent Access URL. Tokens are single-use, so a second attempt with the
  * same token fails — that is the bridge working as intended, not a bug.
+ *
+ * Whoever hands over a token picks where that POST goes, so the destination
+ * is checked first: HTTPS to SimpleFIN Bridge, never an arbitrary host or a
+ * local address.
  */
 export async function claimSetupToken(token: string): Promise<string> {
   const trimmed = token.trim();
   if (!trimmed) throw new Error("Paste your setup token first.");
 
-  let claimUrl: string;
+  const decoded = Buffer.from(trimmed, "base64").toString("utf8").trim();
+  let claimUrl: URL;
   try {
-    claimUrl = Buffer.from(trimmed, "base64").toString("utf8").trim();
+    claimUrl = new URL(decoded);
   } catch {
-    throw new Error("That does not decode as a setup token.");
-  }
-  if (!/^https?:\/\//i.test(claimUrl)) {
     throw new Error(
       "Decoded token is not a URL. Copy the whole token, with no line breaks.",
+    );
+  }
+  if (claimUrl.protocol !== "https:" || !isBridgeHost(claimUrl.hostname)) {
+    throw new Error(
+      "This token does not point at SimpleFIN Bridge. Create a new one on the bridge.",
     );
   }
 
   let response: Response;
   try {
-    response = await fetch(claimUrl, { method: "POST" });
+    response = await fetch(claimUrl.href, { method: "POST" });
   } catch (err) {
     throw new Error(`Could not reach the bridge: ${(err as Error).message}`);
   }
@@ -1274,8 +1331,9 @@ export async function claimSetupToken(token: string): Promise<string> {
   }
 
   const accessUrl = (await response.text()).trim();
-  if (!accessUrl.includes("://")) {
-    throw new Error("The bridge did not return an Access URL.");
+  // Checked here too, so a URL every fetch would refuse is never handed out.
+  if (!httpsUrl(accessUrl)) {
+    throw new Error("The bridge did not return an HTTPS Access URL.");
   }
   return accessUrl;
 }

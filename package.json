@@ -74,7 +74,7 @@
     {
       "name": "prefGlobalTxnDays",
       "title": "Global Transactions Days",
-      "description": "Show all transactions from the last X days in the combined list. Leave blank for 7.",
+      "description": "Show all transactions from the last X days in the combined list. Leave blank for 7, or 0 for no limit.",
       "type": "textfield",
       "required": false
     },

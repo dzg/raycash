@@ -36,7 +36,10 @@ import {
   formatRefreshTime,
   formatSignedAmount,
   numberPref,
+  requestsToday,
   totalsByCurrency,
+  validHostname,
+  MAX_REQUESTS_PER_DAY,
 } from "./simplefin";
 
 const DEFAULT_POS = { light: "#0f0", dark: "#0f0" };
@@ -260,6 +263,7 @@ function AccountSubmenu({
   const label = formatAmount(balance, account.currency, defaultCurrency);
   const displayName = customName || account.name;
   const available = account["available-balance"];
+  const orgHost = validHostname(account.org?.domain);
 
   let txns = (account.transactions ?? []).slice();
   txns.sort(
@@ -361,12 +365,12 @@ function AccountSubmenu({
         </MenuBarExtra.Section>
       ) : null}
 
-      {account.org?.domain ? (
+      {orgHost ? (
         <MenuBarExtra.Section>
           <MenuBarExtra.Item
-            title={`Open ${account.org.domain}`}
+            title={`Open ${orgHost}`}
             icon={Icon.Globe}
-            onAction={() => open(`https://${account.org.domain}`)}
+            onAction={() => open(`https://${orgHost}`)}
           />
         </MenuBarExtra.Section>
       ) : null}
@@ -390,8 +394,8 @@ export default function Command() {
   const txnLimit = numberPref(prefs.prefAccountTxn, 8);
   // 0 hides the combined list, as the preference describes.
   const globalTxnCount = numberPref(prefs.prefGlobalTxnCount, 15);
-  // 0 applies no day cutoff.
-  const globalTxnDays = numberPref(prefs.prefGlobalTxnDays, 0);
+  // Blank is the documented 7; 0 applies no day cutoff.
+  const globalTxnDays = numberPref(prefs.prefGlobalTxnDays, 7);
   const titleMode = prefs.prefTitleMode || "total";
   // Left undefined when blank so day headings fall back to "ddd, MMM D".
   const dateFormat = prefs.prefDateFormat;
@@ -606,7 +610,11 @@ export default function Command() {
                 const res = await getAccountSet(true);
                 revalidate();
                 if (res.fromCache) {
-                  await showHUD("Balances up to date (cached < 20m ago)");
+                  await showHUD(
+                    requestsToday() >= MAX_REQUESTS_PER_DAY
+                      ? `Daily request limit reached (${MAX_REQUESTS_PER_DAY}), showing cached balances`
+                      : "Balances up to date (cached < 20m ago)",
+                  );
                 } else {
                   await showHUD("Balances refreshed successfully");
                 }
