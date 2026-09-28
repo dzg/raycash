@@ -43,8 +43,11 @@ import {
   totalsByCurrency,
   validHostname,
   lastBackgroundRefresh,
+  lastTitle,
   recentLaunches,
   recordLaunch,
+  refreshPending,
+  rememberTitle,
   MAX_REQUESTS_PER_DAY,
 } from "./simplefin";
 
@@ -526,16 +529,32 @@ export default function Command(props: LaunchProps) {
         ? netTitle
         : undefined;
 
+  // A launch renders once before usePromise runs, with no data. If that render
+  // is going to fetch, say so in the menu bar and keep the last total on show
+  // instead of blanking it for the length of the request.
+  const syncing = isLoading && !data && refreshPending(background);
+  const shownTitle = syncing
+    ? titleMode === "none"
+      ? undefined
+      : lastTitle()
+    : title;
+
+  useEffect(() => {
+    if (data) rememberTitle(title);
+  }, [data, title]);
+
   return (
     <MenuBarExtra
       icon={
         error
           ? { source: Icon.Warning, tintColor: Color.Red }
-          : { source: Icon.Coins, tintColor: posColor }
+          : syncing
+            ? { source: Icon.ArrowClockwise, tintColor: posColor }
+            : { source: Icon.Coins, tintColor: posColor }
       }
-      title={title}
+      title={shownTitle}
       isLoading={isLoading}
-      tooltip="RayCash"
+      tooltip={syncing ? "RayCash — syncing with SimpleFIN" : "RayCash"}
     >
       {error ? (
         <MenuBarExtra.Section title="Error">

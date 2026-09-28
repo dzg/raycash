@@ -364,6 +364,30 @@ function shouldFetch(force: boolean, minIntervalMinutes: number): boolean {
 }
 
 /**
+ * Whether the next getAccountSet would go to the network right now, decided
+ * the same way it decides. The menu bar reads this synchronously during its
+ * first render, before usePromise has started, to show a syncing icon only
+ * when a real fetch is underway rather than on every launch.
+ */
+export function refreshPending(force = false): boolean {
+  const prefs = getPrefs();
+  if (!prefs.accessUrl?.trim()) return false;
+  return shouldFetch(force, numberPref(prefs.minIntervalMinutes, 90));
+}
+
+/** The menu bar title as last rendered, so a launch does not blank it. */
+const KEY_LAST_TITLE = "lastTitle";
+
+export function rememberTitle(title: string | undefined): void {
+  if (title === undefined) cache.remove(KEY_LAST_TITLE);
+  else cache.set(KEY_LAST_TITLE, title);
+}
+
+export function lastTitle(): string | undefined {
+  return cache.get(KEY_LAST_TITLE);
+}
+
+/**
  * Returns the current account set, hitting the network only when the cache is
  * stale enough and the daily quota allows it.
  */
