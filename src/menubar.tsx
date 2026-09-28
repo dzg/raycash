@@ -2,6 +2,7 @@ import {
   Clipboard,
   Color,
   Icon,
+  LaunchProps,
   LaunchType,
   LocalStorage,
   MenuBarExtra,
@@ -12,6 +13,7 @@ import {
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { statSync } from "fs";
+import { useEffect } from "react";
 import {
   AmountWidth,
   SimpleFinAccount,
@@ -41,6 +43,8 @@ import {
   totalsByCurrency,
   validHostname,
   lastBackgroundRefresh,
+  recentLaunches,
+  recordLaunch,
   MAX_REQUESTS_PER_DAY,
 } from "./simplefin";
 
@@ -400,10 +404,25 @@ function AccountSubmenu({
   );
 }
 
-export default function Command() {
+export default function Command(props: LaunchProps) {
   const prefs = getPrefs();
+  // Each launch gets its own type in props. A scheduled run fetched at
+  // 2:05 PM while the shared environment global read it as user-initiated,
+  // so the global is only the fallback.
+  const background =
+    (props.launchType ?? environment.launchType) === LaunchType.Background;
+
+  useEffect(() => {
+    if (environment.isDevelopment) {
+      recordLaunch({
+        at: Date.now(),
+        prop: props.launchType,
+        env: environment.launchType,
+      });
+    }
+  }, [props.launchType]);
+
   const { data, isLoading, error, revalidate } = usePromise(async () => {
-    const background = environment.launchType === LaunchType.Background;
     const accountSet = await getAccountSet(background, { background });
     const settings = await LocalStorage.allItems<Record<string, string>>();
     return { ...accountSet, settings };
@@ -478,6 +497,7 @@ export default function Command() {
   // menu fetches for itself, so without it a background refresh that never
   // works looked the same as one that does.
   const autoRefresh = lastBackgroundRefresh();
+  const launches = environment.isDevelopment ? recentLaunches() : [];
   const problem = data?.failure
     ? {
         label: "Refresh failed",
@@ -700,12 +720,24 @@ export default function Command() {
         </MenuBarExtra.Section>
       ) : null}
 
-      {environment.isDevelopment && BUILT_AT ? (
+      {environment.isDevelopment ? (
         <MenuBarExtra.Section>
-          <MenuBarExtra.Item
-            title={`Dev build ${BUILT_AT.toLocaleString()}`}
-            icon={Icon.Hammer}
-          />
+          {BUILT_AT ? (
+            <MenuBarExtra.Item
+              title={`Dev build ${BUILT_AT.toLocaleString()}`}
+              icon={Icon.Hammer}
+            />
+          ) : null}
+          {launches.length ? (
+            <MenuBarExtra.Submenu title="Recent Launches" icon={Icon.List}>
+              {launches.map((launch, i) => (
+                <MenuBarExtra.Item
+                  key={`${launch.at}-${i}`}
+                  title={`${new Date(launch.at).toLocaleTimeString()}   props: ${launch.prop ?? "none"}   env: ${launch.env ?? "none"}`}
+                />
+              ))}
+            </MenuBarExtra.Submenu>
+          ) : null}
         </MenuBarExtra.Section>
       ) : null}
     </MenuBarExtra>

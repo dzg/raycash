@@ -214,6 +214,33 @@ export function lastBackgroundRefresh(): BackgroundRefresh | undefined {
   }
 }
 
+/** Development only: how Raycast labelled each recent menu bar launch. */
+const KEY_LAUNCHES = "launches";
+
+export interface LaunchRecord {
+  at: number;
+  /** The launch type Raycast passed in the command's props. */
+  prop?: string;
+  /** The launch type on the shared environment global. */
+  env?: string;
+}
+
+export function recordLaunch(entry: LaunchRecord): void {
+  cache.set(
+    KEY_LAUNCHES,
+    JSON.stringify([entry, ...recentLaunches()].slice(0, 8)),
+  );
+}
+
+export function recentLaunches(): LaunchRecord[] {
+  try {
+    const parsed = JSON.parse(cache.get(KEY_LAUNCHES) ?? "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 /** The last failed refresh, if it came after the data fetched at `since`. */
 function readFailure(since: number): RefreshFailure | undefined {
   const raw = cache.get(KEY_LAST_FAILURE);
