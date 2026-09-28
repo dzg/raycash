@@ -76,6 +76,29 @@ const LEGACY_KEY_ACCESS_URL = "accessUrl";
 export const MAX_REQUESTS_PER_DAY = 18;
 /** Even a forced refresh will not fire more often than this. */
 const FORCE_FLOOR_MINUTES = 20;
+/**
+ * Slack for the scheduled tick. Raycast fires the background launch on its
+ * own clock, so an hourly tick can land a little early; held to a full hour
+ * it would decline, wait for the next one, and quietly turn an hourly
+ * schedule into a two-hourly one.
+ */
+const SCHEDULED_FLOOR_MINUTES = 50;
+/** Local hours the scheduled refresh runs between: 8 AM until midnight. */
+const DEFAULT_WINDOW_START = 8;
+const DEFAULT_WINDOW_END = 24;
+
+/**
+ * Why a fetch is being attempted. The three differ in how stale the cache has
+ * to be before a request is worth making, and how much of the day's quota
+ * they are allowed to spend.
+ */
+export type FetchIntent =
+  /** A window opened and would like fresh data if it is cheap. */
+  | "passive"
+  /** The menu bar's hourly background tick. */
+  | "scheduled"
+  /** The user asked for new balances and is waiting on them. */
+  | "forced";
 
 /** `Preferences` is generated from package.json into raycast-env.d.ts. */
 export function getPrefs(): Preferences {
@@ -189,27 +212,99 @@ function readCache():
   }
 }
 
-function shouldFetch(force: boolean, minIntervalMinutes: number): boolean {
+/**
+ * The fetch stamp on its own, read straight from the cache.
+ *
+ * usePromise has no data on the first render after a launch, so the menu bar
+ * would drop its Last Refreshed row for the length of the fetch -- and the
+ * row is exactly where a refresh in flight should be announced. The stamp is
+ * already on disk by then, so read it directly rather than wait for the
+ * promise to hand back the same number.
+ */
+export function cachedFetchedAt(): number | undefined {
+  const ts = cache.get(KEY_FETCHED_AT);
+  return ts ? Number(ts) : undefined;
+}
+
+/**
+ * The hours of the local day the scheduled refresh is awake.
+ *
+ * The quota is the whole reason for a window. One fetch an hour from 8 AM to
+ * midnight spends 16 of the roughly 24 requests SimpleFIN allows in a day and
+ * leaves the rest for refreshes the user asks for; running around the clock
+ * would spend the lot overnight, when no one is reading the result and the
+ * banks have posted nothing new anyway.
+ */
+export function refreshWindow(): { start: number; end: number } {
+  const prefs = getPrefs();
+  return {
+    start: Math.min(
+      numberPref(prefs.prefRefreshStartHour, DEFAULT_WINDOW_START),
+      24,
+    ),
+    end: Math.min(numberPref(prefs.prefRefreshEndHour, DEFAULT_WINDOW_END), 24),
+  };
+}
+
+/** Whether the scheduled tick may reach the network right now. */
+export function withinRefreshWindow(now = new Date()): boolean {
+  const { start, end } = refreshWindow();
+  // Equal ends describe no window at all, which is how a user asks for
+  // round-the-clock refreshing.
+  if (start === end) return true;
+  const hour = now.getHours() + now.getMinutes() / 60;
+  // A window whose end precedes its start wraps past midnight, e.g. 22 to 6.
+  return start < end
+    ? hour >= start && hour < end
+    : hour >= start || hour < end;
+}
+
+/** Names a window hour the way a menu row or an error should say it. */
+export function formatHour(hour: number): string {
+  const h = Math.floor(hour) % 24;
+  return `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** Why a fetch was declined, or undefined when it may go ahead. */
+type Decline = "quota" | "asleep" | "recent";
+
+function fetchBlockedBy(
+  intent: FetchIntent,
+  minIntervalMinutes: number,
+): Decline | undefined {
   // The cap comes first. Checked after the cache, a fresh install whose
   // requests keep failing would retry on every launch with no ceiling at all.
-  if (requestsToday() >= (force ? 24 : MAX_REQUESTS_PER_DAY)) return false;
+  // Only a refresh the user asked for may spend the last few of the day: the
+  // schedule stops at the soft cap, so asking is always still possible.
+  if (requestsToday() >= (intent === "forced" ? 24 : MAX_REQUESTS_PER_DAY)) {
+    return "quota";
+  }
+
+  // Outside its hours the schedule is asleep, however stale the cache is.
+  if (intent === "scheduled" && !withinRefreshWindow()) return "asleep";
 
   const cached = readCache();
-  if (!cached) return true;
+  if (!cached) return undefined;
 
+  const floor =
+    intent === "forced"
+      ? FORCE_FLOOR_MINUTES
+      : intent === "scheduled"
+        ? SCHEDULED_FLOOR_MINUTES
+        : minIntervalMinutes;
   const ageMinutes = (Date.now() - cached.fetchedAt) / 60000;
-  return force
-    ? ageMinutes >= FORCE_FLOOR_MINUTES
-    : ageMinutes >= minIntervalMinutes;
+  return ageMinutes >= floor ? undefined : "recent";
 }
 
 /**
  * Returns the current account set, hitting the network only when the cache is
- * stale enough and the daily quota allows it.
+ * stale enough, the schedule is awake, and the daily quota allows it.
  */
-export async function getAccountSet(force = false): Promise<AccountSet> {
+export async function getAccountSet(
+  intent: FetchIntent = "passive",
+): Promise<AccountSet> {
   const prefs = getPrefs();
-  const minInterval = numberPref(prefs.minIntervalMinutes, 90);
+  const minInterval = numberPref(prefs.minIntervalMinutes, 60);
 
   const accessUrl = prefs.accessUrl?.trim();
   const accessHash = accessUrl ? fingerprint(accessUrl) : undefined;
@@ -235,7 +330,7 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
     } else {
       cache.remove(KEY_ACCESS_HASH);
     }
-    force = true;
+    intent = "forced";
   }
 
   const cachedForFetch = readCache();
@@ -253,11 +348,18 @@ export async function getAccountSet(force = false): Promise<AccountSet> {
     }
   }
 
-  if (!shouldFetch(force, minInterval)) {
+  const blocked = fetchBlockedBy(intent, minInterval);
+  if (blocked) {
     if (cachedForFetch) {
       return { ...cachedForFetch, fromCache: true };
     }
-    // With nothing cached, only the daily cap refuses a fetch.
+    // With nothing cached, only the daily cap and the schedule's own hours
+    // can refuse -- a floor cannot, with no stamp to measure against.
+    if (blocked === "asleep") {
+      throw new Error(
+        `Automatic refresh is paused until ${formatHour(refreshWindow().start)}. Run Refresh Balances to fetch now.`,
+      );
+    }
     throw new Error(
       `Daily SimpleFIN request limit reached (${requestsToday()} today). It resets at midnight UTC.`,
     );

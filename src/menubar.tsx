@@ -34,6 +34,10 @@ import {
   STRIP_STORAGE_KEY,
   sortAccountsAndOrgs,
   formatRefreshTime,
+  cachedFetchedAt,
+  refreshWindow,
+  withinRefreshWindow,
+  formatHour,
   formatSignedAmount,
   numberPref,
   totalsByCurrency,
@@ -378,7 +382,9 @@ export default function Command() {
   const prefs = getPrefs();
   const { data, isLoading, error, revalidate } = usePromise(async () => {
     const accountSet = await getAccountSet(
-      environment.launchType === LaunchType.Background,
+      environment.launchType === LaunchType.Background
+        ? "scheduled"
+        : "passive",
     );
     const settings = await LocalStorage.allItems<Record<string, string>>();
     return { ...accountSet, settings };
@@ -401,6 +407,19 @@ export default function Command() {
   const aligned = !prefs.prefDisableAlignment;
   const groupByDate = !!prefs.prefGroupByDate;
   const { posColor, negColor } = getThemeColors(prefs);
+
+  // Falls back to the cache so the row survives the fetch: usePromise has no
+  // data on the first render after a launch, and a row that vanishes cannot
+  // say it is refreshing.
+  const fetchedAt = data?.fetchedAt || cachedFetchedAt();
+  const refreshStamp = fetchedAt
+    ? formatRefreshTime(fetchedAt, dateFormat)
+    : "";
+  // A stamp that has not moved in hours looks the same whether the schedule
+  // is asleep for the night or simply had nothing to do, so say which.
+  const scheduleNote = withinRefreshWindow()
+    ? "Refreshes hourly"
+    : `Automatic refresh resumes at ${formatHour(refreshWindow().start)}`;
 
   const visibleAccounts = accounts.filter(
     (a) => settings[`hide_${a.id}`] !== "true",
@@ -594,16 +613,24 @@ export default function Command() {
         ];
       })()}
 
-      {data?.fetchedAt ? (
+      {fetchedAt ? (
         <MenuBarExtra.Section>
           <MenuBarExtra.Item
-            title={`Last Refreshed: ${formatRefreshTime(data.fetchedAt, dateFormat)}`}
-            icon={Icon.Clock}
-            tooltip={`Last refresh: ${new Date(data.fetchedAt).toLocaleString()}\nClick to refresh`}
+            title={
+              isLoading
+                ? `Refreshing... (last ${refreshStamp})`
+                : `Last Refreshed: ${refreshStamp}`
+            }
+            icon={isLoading ? Icon.ArrowClockwise : Icon.Clock}
+            tooltip={
+              isLoading
+                ? `Refreshing now\nLast refresh: ${new Date(fetchedAt).toLocaleString()}`
+                : `Last refresh: ${new Date(fetchedAt).toLocaleString()}\n${scheduleNote}\nClick to refresh`
+            }
             onAction={async () => {
               try {
                 await showHUD("Refreshing balances...");
-                const res = await getAccountSet(true);
+                const res = await getAccountSet("forced");
                 revalidate();
                 if (res.fromCache) {
                   await showHUD("Balances up to date (cached < 20m ago)");
@@ -616,12 +643,10 @@ export default function Command() {
             }}
             alternate={
               <MenuBarExtra.Item
-                title={`Copy Timestamp: ${formatRefreshTime(data.fetchedAt, dateFormat)}`}
+                title={`Copy Timestamp: ${refreshStamp}`}
                 icon={Icon.Clipboard}
                 onAction={async () => {
-                  await Clipboard.copy(
-                    new Date(data.fetchedAt).toLocaleString(),
-                  );
+                  await Clipboard.copy(new Date(fetchedAt).toLocaleString());
                   await showHUD("Copied refresh timestamp");
                 }}
               />

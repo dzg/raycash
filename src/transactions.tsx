@@ -202,7 +202,7 @@ export default function Command() {
 
   const { data, isLoading, error } = usePromise(async () => {
     const accountSet = await getAccountSet(
-      environment.launchType === "background",
+      environment.launchType === "background" ? "scheduled" : "passive",
     );
     const settings = await LocalStorage.allItems<Record<string, string>>();
     return { ...accountSet, settings };

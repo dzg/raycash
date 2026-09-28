@@ -21,7 +21,7 @@
       "title": "Menu Bar",
       "description": "Balances and recent transactions in the macOS menu bar.",
       "mode": "menu-bar",
-      "interval": "2h"
+      "interval": "1h"
     },
     {
       "name": "accounts",
@@ -148,9 +148,23 @@
       "required": false
     },
     {
+      "name": "prefRefreshStartHour",
+      "title": "Auto Refresh From (Hour)",
+      "description": "Hour of the day the menu bar's hourly refresh starts, 0-23. Leave blank for 8 (8 AM).",
+      "type": "textfield",
+      "required": false
+    },
+    {
+      "name": "prefRefreshEndHour",
+      "title": "Auto Refresh Until (Hour)",
+      "description": "Hour of the day it stops, 1-24. Leave blank for 24 (midnight). Match it to the start hour to refresh around the clock. Refresh Balances always works, in or out of the window.",
+      "type": "textfield",
+      "required": false
+    },
+    {
       "name": "minIntervalMinutes",
       "title": "Minimum Fetch Interval (Minutes)",
-      "description": "Hard floor between network requests. SimpleFIN suggests ~90 mins. Leave blank for 90.",
+      "description": "Hard floor between network requests made when a RayCash window opens. The menu bar keeps its own hourly schedule. Leave blank for 60.",
       "type": "textfield",
       "required": false
     }

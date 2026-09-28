@@ -14,7 +14,7 @@ export default async function Command() {
   });
 
   try {
-    const accountSet = await getAccountSet(true);
+    const accountSet = await getAccountSet("forced");
     const calls = requestsToday();
     const timeStr = formatRefreshTime(accountSet.fetchedAt);
     await updateCommandMetadata({
@@ -23,10 +23,11 @@ export default async function Command() {
 
     // Update the other surface too, so the menu bar and this subtitle agree.
     // Safe against the quota whichever way the call above went: the repaint
-    // re-enters getAccountSet, and it cannot reach the network here. A real
-    // fetch just reset the cache age to zero, and a cached result means the
-    // age was already under the 20 minute floor or the daily cap was spent --
-    // all three make shouldFetch decline.
+    // re-enters getAccountSet as a scheduled tick, and it cannot reach the
+    // network here. A real fetch just reset the cache age to zero, a cached
+    // result means the age was already under a floor stricter than the
+    // scheduled one, and a spent daily cap stops the schedule sooner than it
+    // stops a forced refresh.
     await repaintMenuBar();
 
     if (accountSet.fromCache) {

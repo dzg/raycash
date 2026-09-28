@@ -177,7 +177,7 @@ export default function Command() {
   const { posColor, negColor } = getThemeColors(prefs);
 
   const { data, isLoading, error } = usePromise(async () => {
-    const accountSet = await getAccountSet(false);
+    const accountSet = await getAccountSet("passive");
     const local = await LocalStorage.allItems<Record<string, string>>();
     setSettings(local);
     return accountSet;
