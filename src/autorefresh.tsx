@@ -42,7 +42,6 @@ export default async function Command(props: LaunchProps) {
     const accountSet = await getAccountSet(false, { launch: true });
     if (!accountSet.fromCache) {
       outcome = "refreshed";
-      await repaintMenuBar("autorefresh");
     } else if (accountSet.failure && accountSet.failure.at >= started) {
       outcome = `failed: ${accountSet.failure.message}`;
     } else {
@@ -52,6 +51,12 @@ export default async function Command(props: LaunchProps) {
   } catch (err) {
     outcome = `failed: ${(err as Error).message}`;
   }
+
+  // Repaint after every run, not only after a fetch. The menu bar item shows
+  // whatever the menu bar command last rendered, so without this its "Last
+  // check" line and any failure row would lag until the user next opened it,
+  // and a rebuild that re-imports the extension leaves the old render up.
+  await repaintMenuBar("autorefresh");
 
   await updateCommandMetadata({
     subtitle: `Last check ${formatRefreshTime(Date.now())}: ${outcome}`,
