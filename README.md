@@ -1,13 +1,14 @@
 # RayCash
 
-**All your bank balances, one click away.**
+**All your transactions and balances, one click away.**
 
-RayCash puts your net worth in your Mac's menu bar and your recent transactions one click below it — every bank, credit card, and brokerage you use, in one place. No app to open, no dashboard to log into. Glance up, see where you stand, get back to what you were doing.
+RayCash puts your net worth in your Mac's menu bar and your recent transactions one click below it — every bank, credit card, and brokerage you use, in one place. Data is provided by [SimpleFIN Bridge](https://beta-bridge.simplefin.org/).
+
+It also allows you to quickly search transactions by text, date, amount, etc.
 
 ![Menu bar with balances by bank and recent transactions](media/menu-bar.png)
 
 ![Transactions search with the detail pane open](media/transactions.png)
-
 
 ## Is this safe?
 
@@ -44,16 +45,14 @@ RayCash exchanges the token for your access link, copies it to your clipboard, a
 
 ## Everyday use
 
-You'll mostly just glance at the menu bar. When you want more:
-
 - **Click the menu bar item** to see every account and recent transactions. Hover over a transaction for full details.
-- **Transactions** — search your whole history. Typing `123` finds `$123.74` before it finds `$18.23`.
+- **Transactions** — search your whole history.
 - **Accounts** — rename accounts and banks, hide the ones you don't care about, exclude any from the net total, or flip a balance that shows backwards.
 - **Refresh Balances** — nudge RayCash to fetch fresh data now instead of waiting for the next automatic refresh.
 
-## Making it yours
+## Preferences
 
-Everything below is optional — RayCash works fine out of the box.
+Everything below is optional.
 
 **Hide the number.** Set **Menu Bar Title** to icon-only if you don't want your net worth visible on screen.
 
@@ -94,7 +93,7 @@ A few niceties:
 | **Grouping**                         | Flat transaction list, or one submenu per day.                                   |
 | **Row Template**                     | What each transaction row shows (see above).                                     |
 | **Day Heading Format**               | Date format for day headings.                                                    |
-| **Hide Currency Symbol / Code**      | Enter `$` or `USD` to hide it from amounts.                                      |
+| **Hide Currency Symbol / Code**      | Enter`$` or `USD` to hide it from amounts.                                       |
 | **Transactions Per Account**         | How many recent transactions inside each account's submenu.                      |
 | **Global Transactions Count / Days** | Size of the combined feed at the bottom of the menu.                             |
 | **Local Archive Limit (Days)**       | How much history to keep on your Mac (default: a year).                          |
