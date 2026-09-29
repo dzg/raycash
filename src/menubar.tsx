@@ -12,7 +12,7 @@ import {
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { statSync } from "fs";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   AmountWidth,
   SimpleFinAccount,
@@ -413,15 +413,19 @@ export default function Command(props: LaunchProps) {
   // cache is older than the minimum interval, so the label cannot cost quota
   // either. Development logs it, since whether scheduled runs happen at all
   // is the open question.
+  // Refresh Balances names itself when it launches this command to repaint,
+  // so its launches are not mistaken for the scheduler's.
+  const source = props.launchContext?.source;
   useEffect(() => {
     if (environment.isDevelopment) {
       recordLaunch({
         at: Date.now(),
         prop: props.launchType,
         env: environment.launchType,
+        source: typeof source === "string" ? source : undefined,
       });
     }
-  }, [props.launchType]);
+  }, [props.launchType, source]);
 
   const { data, isLoading, error, revalidate } = usePromise(async () => {
     const accountSet = await getAccountSet(false, { launch: true });
@@ -471,7 +475,9 @@ export default function Command(props: LaunchProps) {
 
   // A failed fetch also comes back as cached data, and used to be announced as
   // "up to date", so the HUD tells the outcomes apart.
+  const [refreshing, setRefreshing] = useState(false);
   const refreshNow = async () => {
+    setRefreshing(true);
     try {
       await showHUD("Refreshing balances...");
       const started = Date.now();
@@ -490,6 +496,8 @@ export default function Command(props: LaunchProps) {
       }
     } catch (err) {
       await showHUD(`Failed to refresh: ${(err as Error).message}`);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -531,15 +539,16 @@ export default function Command(props: LaunchProps) {
         ? netTitle
         : undefined;
 
-  // A launch renders once before usePromise runs, with no data. If that render
-  // is going to fetch, say so in the menu bar and keep the last total on show
-  // instead of blanking it for the length of the request.
+  // A launch renders once before usePromise runs, with no data, and most
+  // launches only read the cache. Keep the last total on show through that
+  // rather than blank the menu bar every quarter hour, and while a request
+  // is really out, from a launch or from the refresh action, say so with a
+  // sync icon and a mark beside the total.
   const syncing = isLoading && !data && refreshPending();
-  const shownTitle = syncing
-    ? titleMode === "none"
-      ? undefined
-      : lastTitle()
-    : title;
+  const busy = syncing || refreshing;
+  const held = data ? title : lastTitle();
+  const shownTitle =
+    titleMode === "none" || error ? title : busy && held ? `${held} ↻` : held;
 
   useEffect(() => {
     if (data) rememberTitle(title);
@@ -550,13 +559,13 @@ export default function Command(props: LaunchProps) {
       icon={
         error
           ? { source: Icon.Warning, tintColor: Color.Red }
-          : syncing
+          : busy
             ? { source: Icon.ArrowClockwise, tintColor: posColor }
             : { source: Icon.Coins, tintColor: posColor }
       }
       title={shownTitle}
-      isLoading={isLoading}
-      tooltip={syncing ? "RayCash — syncing with SimpleFIN" : "RayCash"}
+      isLoading={isLoading || refreshing}
+      tooltip={busy ? "RayCash — syncing with SimpleFIN" : "RayCash"}
     >
       {error ? (
         <MenuBarExtra.Section title="Error">
@@ -755,7 +764,7 @@ export default function Command(props: LaunchProps) {
               {launches.map((launch, i) => (
                 <MenuBarExtra.Item
                   key={`${launch.at}-${i}`}
-                  title={`${new Date(launch.at).toLocaleTimeString()}   props: ${launch.prop ?? "none"}   env: ${launch.env ?? "none"}`}
+                  title={`${new Date(launch.at).toLocaleTimeString()}   props: ${launch.prop ?? "none"}   env: ${launch.env ?? "none"}${launch.source ? `   via: ${launch.source}` : ""}`}
                 />
               ))}
             </MenuBarExtra.Submenu>

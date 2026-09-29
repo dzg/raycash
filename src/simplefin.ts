@@ -250,6 +250,8 @@ export interface LaunchRecord {
   prop?: string;
   /** The launch type on the shared environment global. */
   env?: string;
+  /** Which command asked for the launch, when one did. */
+  source?: string;
 }
 
 export function recordLaunch(entry: LaunchRecord): void {
@@ -260,6 +262,7 @@ export function recordLaunch(entry: LaunchRecord): void {
     last &&
     last.prop === entry.prop &&
     last.env === entry.env &&
+    last.source === entry.source &&
     entry.at - last.at < 3000
   ) {
     return;
@@ -660,7 +663,11 @@ export async function getAccountSet(
  */
 export async function repaintMenuBar(): Promise<void> {
   try {
-    await launchCommand({ name: "menubar", type: LaunchType.Background });
+    await launchCommand({
+      name: "menubar",
+      type: LaunchType.Background,
+      context: { source: "refresh" },
+    });
   } catch {
     // Menu Bar command disabled or unavailable; nothing to repaint.
   }
