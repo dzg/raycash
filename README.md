@@ -38,7 +38,7 @@ RayCash needs a [SimpleFIN Bridge](https://beta-bridge.simplefin.org/) account �
 3. On the SimpleFIN site, go to **My Account → Apps → New Connection → Create Setup Token** and copy the token.
 4. Paste the token into the Setup command in Raycast.
 
-RayCash exchanges the token for your access link, copies it to your clipboard, and opens its preferences. Paste it into **SimpleFIN Access URL** — that's it. Your balances appear in the menu bar and refresh automatically every couple of hours.
+RayCash exchanges the token for your access link, copies it to your clipboard, and opens its preferences. Paste it into **SimpleFIN Access URL** — that's it. Your balances appear in the menu bar and refresh themselves: RayCash checks every 15 minutes and fetches new balances once the ones it has are more than 90 minutes old.
 
 > **One thing to know about setup tokens:** each token works exactly once, and whoever uses it first gets read-only access to your linked accounts. So paste it only into RayCash. If a token ever ends up somewhere it shouldn't (a chat, a note, an email), delete that connection on the SimpleFIN site and create a fresh one.
 
@@ -106,7 +106,7 @@ A few niceties:
 ## FAQ
 
 **Why hasn't my balance updated?**
-Banks share fresh data with SimpleFIN about once a day, so RayCash checks every couple of hours — more often wouldn't show anything new. It also deliberately stays well under SimpleFIN's daily request limit, because exceeding it would lock the connection and force you to set up again. If you just made a purchase and don't see it yet, that's normal; it'll show up when your bank posts it.
+Banks share fresh data with SimpleFIN about once a day, so RayCash fetches at most every 90 minutes — more often wouldn't show anything new. It also deliberately stays well under SimpleFIN's daily request limit, because exceeding it would lock the connection and force you to set up again. If you just made a purchase and don't see it yet, that's normal; it'll show up when your bank posts it.
 
 **A balance shows negative when it should be positive (or vice versa).**
 Some banks report signs backwards. Open **Accounts** and use *invert* on that account.

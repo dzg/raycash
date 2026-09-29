@@ -20,8 +20,7 @@
       "name": "menubar",
       "title": "Menu Bar",
       "description": "Balances and recent transactions in the macOS menu bar.",
-      "mode": "menu-bar",
-      "interval": "15m"
+      "mode": "menu-bar"
     },
     {
       "name": "accounts",
@@ -40,6 +39,13 @@
       "title": "Refresh Balances",
       "description": "Force a refresh of RayCash balances.",
       "mode": "no-view"
+    },
+    {
+      "name": "autorefresh",
+      "title": "Auto-Refresh Balances",
+      "description": "Runs in the background every 15 minutes: fetches new balances once the cached ones are older than the Minimum Fetch Interval, then repaints the menu bar.",
+      "mode": "no-view",
+      "interval": "15m"
     }
   ],
   "preferences": [
@@ -115,7 +121,7 @@
       "name": "prefDisableAlignment",
       "title": "Alignment",
       "label": "Disable pseudo alignment",
-      "description": "Amounts and dates are padded with width-matched Unicode spaces so they line up in a column, since the menu font's digits are proportional. Check this to leave them unpadded — useful if the padding copies badly into another app or renders oddly at your font size.",
+      "description": "Amounts and dates are padded with width-matched Unicode spaces so they line up in a column, since the menu font's digits are proportional. Check this to leave them unpadded \u2014 useful if the padding copies badly into another app or renders oddly at your font size.",
       "type": "checkbox",
       "required": false
     },
@@ -129,7 +135,7 @@
     {
       "name": "prefDefaultCurrency",
       "title": "Hide Currency Symbol / Code",
-      "description": "Enter a symbol or code to strip from amounts (e.g., '$', 'USD', '€'). Leave blank to show currency on all amounts.",
+      "description": "Enter a symbol or code to strip from amounts (e.g., '$', 'USD', '\u20ac'). Leave blank to show currency on all amounts.",
       "type": "textfield",
       "required": false
     },

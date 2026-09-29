@@ -413,8 +413,8 @@ export default function Command(props: LaunchProps) {
   // cache is older than the minimum interval, so the label cannot cost quota
   // either. Development logs it, since whether scheduled runs happen at all
   // is the open question.
-  // Refresh Balances names itself when it launches this command to repaint,
-  // so its launches are not mistaken for the scheduler's.
+  // Refresh Balances and the auto-refresh worker name themselves when they
+  // launch this command to repaint, so those launches are told apart.
   const source = props.launchContext?.source;
   useEffect(() => {
     if (environment.isDevelopment) {
@@ -502,7 +502,7 @@ export default function Command(props: LaunchProps) {
   };
 
   // One status row. A failed refresh wins while nothing has succeeded since;
-  // otherwise the last launch, if it did not work for a reason no failure
+  // otherwise the last check, if it did not work for a reason no failure
   // records: the daily cap, or a run cut off before it could write one.
   const run = lastRun();
   const launches = environment.isDevelopment ? recentLaunches() : [];
@@ -513,13 +513,14 @@ export default function Command(props: LaunchProps) {
         message: data.failure.message,
       }
     : run?.problem
-      ? { label: "Last run", at: run.at, message: run.problem }
+      ? { label: "Last check", at: run.at, message: run.problem }
       : undefined;
-  // When the command last ran, whoever launched it, and what it did. Against
-  // "Last Refreshed" this shows whether it runs by itself: a run later than
-  // the last time the menu was opened was Raycast's.
+  // When the balances were last checked, by the auto-refresh worker or by a
+  // launch of this menu, and what came of it. Against "Last Refreshed" this
+  // shows whether the extension is refreshing by itself: a check later than
+  // the last time the menu was opened was the worker's.
   const runLine = run
-    ? `Last run ${formatRefreshTime(run.at, dateFormat)}: ${
+    ? `Last check ${formatRefreshTime(run.at, dateFormat)}: ${
         run.problem ??
         {
           fetching: "request in progress",
@@ -529,7 +530,7 @@ export default function Command(props: LaunchProps) {
           capped: "daily limit reached",
         }[run.outcome]
       }`
-    : "Last run: none recorded";
+    : "Last check: none recorded";
 
   const title = error
     ? "—"
@@ -541,10 +542,11 @@ export default function Command(props: LaunchProps) {
 
   // A launch renders once before usePromise runs, with no data, and most
   // launches only read the cache. Keep the last total on show through that
-  // rather than blank the menu bar every quarter hour, and while a request
-  // is really out, from a launch or from the refresh action, say so with a
-  // sync icon and a mark beside the total.
-  const syncing = isLoading && !data && refreshPending();
+  // rather than blank the menu bar on every launch, and while a request is
+  // really out, from this launch, from the refresh action, or from the
+  // auto-refresh worker, say so with a sync icon and a mark beside the total.
+  const syncing =
+    (isLoading && !data && refreshPending()) || run?.outcome === "fetching";
   const busy = syncing || refreshing;
   const held = data ? title : lastTitle();
   const shownTitle =

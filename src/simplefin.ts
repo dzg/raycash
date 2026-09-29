@@ -237,10 +237,11 @@ export function lastRun(): MenuRun | undefined {
 }
 
 /**
- * Development only: every recent menu bar launch and how Raycast labelled it.
- * All launches, not just those labelled background: a scheduled run labelled
- * user-initiated would otherwise leave no trace, and whether scheduled runs
- * happen at all is the question. A new key starts it clean.
+ * Development only: every recent launch of the menu bar command or the
+ * auto-refresh worker, and how Raycast labelled it. All launches, not just
+ * those labelled background: a scheduled run labelled user-initiated would
+ * otherwise leave no trace, and whether scheduled runs happen at all is the
+ * question.
  */
 const KEY_LAUNCHES = "launchLog";
 
@@ -476,8 +477,17 @@ export async function getAccountSet(
     }
   }
 
-  if (!shouldFetch(force, minInterval)) {
-    if (launch) {
+  // Another launch may already have a request out: the auto-refresh worker
+  // while the menu is opened, or the second mount development gives each
+  // launch. One request at a time; the other serves the cache and leaves the
+  // record to the run that is fetching. A run that died mid-fetch stops
+  // counting as in flight after STALLED_MS, and with nothing cached to serve
+  // there is nothing to wait for.
+  const inFlight =
+    launch && !!cachedForFetch && lastRun()?.outcome === "fetching";
+
+  if (inFlight || !shouldFetch(force, minInterval)) {
+    if (launch && !inFlight) {
       if (requestsToday() >= MAX_REQUESTS_PER_DAY) {
         noteRun(
           "capped",
@@ -652,21 +662,23 @@ export async function getAccountSet(
  * Repaints the menu bar extra after data changes underneath it.
  *
  * The menu bar holds whatever the menubar command last rendered, and nothing
- * re-runs that command when another command writes the cache. Refresh Balances
- * would fetch, stamp its own subtitle with the new time, and leave the menu
- * showing the previous fetch until the next scheduled launch -- two surfaces
- * reading one cache and disagreeing about it.
+ * re-runs that command when another command writes the cache. Refresh
+ * Balances or the auto-refresh worker would fetch and leave the menu showing
+ * the previous balances until the user next opened it -- two surfaces reading
+ * one cache and disagreeing about it.
  *
  * A background launch re-renders the menu without stealing focus. The user can
  * disable the Menu Bar command, and launchCommand throws when they have, so a
  * failed repaint must never turn a successful refresh into an error.
+ *
+ * `source` names the command asking, for the development launch log.
  */
-export async function repaintMenuBar(): Promise<void> {
+export async function repaintMenuBar(source = "refresh"): Promise<void> {
   try {
     await launchCommand({
       name: "menubar",
       type: LaunchType.Background,
-      context: { source: "refresh" },
+      context: { source },
     });
   } catch {
     // Menu Bar command disabled or unavailable; nothing to repaint.
