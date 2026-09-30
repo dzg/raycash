@@ -1,16 +1,10 @@
 import {
   LaunchProps,
   LaunchType,
-  environment,
   showHUD,
   updateCommandMetadata,
 } from "@raycast/api";
-import {
-  formatRefreshTime,
-  getAccountSet,
-  recordLaunch,
-  repaintMenuBar,
-} from "./simplefin";
+import { formatRefreshTime, getAccountSet, repaintMenuBar } from "./simplefin";
 
 /**
  * The background worker. Raycast launches it on the manifest interval; each
@@ -26,15 +20,6 @@ import {
  */
 export default async function Command(props: LaunchProps) {
   const manual = props.launchType === LaunchType.UserInitiated;
-
-  if (environment.isDevelopment) {
-    recordLaunch({
-      at: Date.now(),
-      prop: props.launchType,
-      env: environment.launchType,
-      source: "autorefresh",
-    });
-  }
 
   let outcome: string;
   try {
@@ -54,9 +39,8 @@ export default async function Command(props: LaunchProps) {
 
   // Repaint after every run, not only after a fetch. The menu bar item shows
   // whatever the menu bar command last rendered, so without this its "Last
-  // check" line and any failure row would lag until the user next opened it,
-  // and a rebuild that re-imports the extension leaves the old render up.
-  await repaintMenuBar("autorefresh");
+  // check" line and any failure row would lag until the user next opened it.
+  await repaintMenuBar();
 
   await updateCommandMetadata({
     subtitle: `Last check ${formatRefreshTime(Date.now())}: ${outcome}`,

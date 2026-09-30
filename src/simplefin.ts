@@ -236,50 +236,6 @@ export function lastRun(): MenuRun | undefined {
   }
 }
 
-/**
- * Development only: every recent launch of the menu bar command or the
- * auto-refresh worker, and how Raycast labelled it. All launches, not just
- * those labelled background: a scheduled run labelled user-initiated would
- * otherwise leave no trace, and whether scheduled runs happen at all is the
- * question.
- */
-const KEY_LAUNCHES = "launchLog";
-
-export interface LaunchRecord {
-  at: number;
-  /** The launch type Raycast passed in the command's props. */
-  prop?: string;
-  /** The launch type on the shared environment global. */
-  env?: string;
-  /** Which command asked for the launch, when one did. */
-  source?: string;
-}
-
-export function recordLaunch(entry: LaunchRecord): void {
-  const log = recentLaunches();
-  const last = log[0];
-  // Development mounts each launch twice; one launch is one entry.
-  if (
-    last &&
-    last.prop === entry.prop &&
-    last.env === entry.env &&
-    last.source === entry.source &&
-    entry.at - last.at < 3000
-  ) {
-    return;
-  }
-  cache.set(KEY_LAUNCHES, JSON.stringify([entry, ...log].slice(0, 12)));
-}
-
-export function recentLaunches(): LaunchRecord[] {
-  try {
-    const parsed = JSON.parse(cache.get(KEY_LAUNCHES) ?? "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 /** The last failed refresh, if it came after the data fetched at `since`. */
 function readFailure(since: number): RefreshFailure | undefined {
   const raw = cache.get(KEY_LAST_FAILURE);
@@ -670,16 +626,10 @@ export async function getAccountSet(
  * A background launch re-renders the menu without stealing focus. The user can
  * disable the Menu Bar command, and launchCommand throws when they have, so a
  * failed repaint must never turn a successful refresh into an error.
- *
- * `source` names the command asking, for the development launch log.
  */
-export async function repaintMenuBar(source = "refresh"): Promise<void> {
+export async function repaintMenuBar(): Promise<void> {
   try {
-    await launchCommand({
-      name: "menubar",
-      type: LaunchType.Background,
-      context: { source },
-    });
+    await launchCommand({ name: "menubar", type: LaunchType.Background });
   } catch {
     // Menu Bar command disabled or unavailable; nothing to repaint.
   }

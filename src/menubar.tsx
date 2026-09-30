@@ -2,16 +2,13 @@ import {
   Clipboard,
   Color,
   Icon,
-  LaunchProps,
   LocalStorage,
   MenuBarExtra,
-  environment,
   open,
   openExtensionPreferences,
   showHUD,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
-import { statSync } from "fs";
 import { useEffect, useState } from "react";
 import {
   AmountWidth,
@@ -43,27 +40,10 @@ import {
   validHostname,
   lastRun,
   lastTitle,
-  recentLaunches,
-  recordLaunch,
   refreshPending,
   rememberTitle,
   MAX_REQUESTS_PER_DAY,
 } from "./simplefin";
-
-/**
- * When this bundle was written, shown in development only. A menu drawn by an
- * older build looks the same as one drawn by the current build, so a stale
- * build could otherwise pass for a failed fix.
- */
-const BUILT_AT = (() => {
-  try {
-    return typeof __filename === "string"
-      ? statSync(__filename).mtime
-      : undefined;
-  } catch {
-    return undefined;
-  }
-})();
 
 const DEFAULT_POS = { light: "#0f0", dark: "#0f0" };
 const DEFAULT_NEG = { light: "#f00", dark: "#f00" };
@@ -406,27 +386,12 @@ function AccountSubmenu({
   );
 }
 
-export default function Command(props: LaunchProps) {
+export default function Command() {
   const prefs = getPrefs();
-  // Raycast's launch labels decide nothing here. A scheduled run once arrived
-  // labelled user-initiated, and a launch of any kind fetches only once the
-  // cache is older than the minimum interval, so the label cannot cost quota
-  // either. Development logs it, since whether scheduled runs happen at all
-  // is the open question.
-  // Refresh Balances and the auto-refresh worker name themselves when they
-  // launch this command to repaint, so those launches are told apart.
-  const source = props.launchContext?.source;
-  useEffect(() => {
-    if (environment.isDevelopment) {
-      recordLaunch({
-        at: Date.now(),
-        prop: props.launchType,
-        env: environment.launchType,
-        source: typeof source === "string" ? source : undefined,
-      });
-    }
-  }, [props.launchType, source]);
-
+  // Whether Raycast labels a launch background or user-initiated decides
+  // nothing here: a launch of any kind fetches only once the cache is older
+  // than the minimum interval, so a label cannot cost quota, and the schedule
+  // itself belongs to the Auto-Refresh Balances command.
   const { data, isLoading, error, revalidate } = usePromise(async () => {
     const accountSet = await getAccountSet(false, { launch: true });
     const settings = await LocalStorage.allItems<Record<string, string>>();
@@ -505,7 +470,6 @@ export default function Command(props: LaunchProps) {
   // otherwise the last check, if it did not work for a reason no failure
   // records: the daily cap, or a run cut off before it could write one.
   const run = lastRun();
-  const launches = environment.isDevelopment ? recentLaunches() : [];
   const problem = data?.failure
     ? {
         label: "Refresh failed",
@@ -749,27 +713,6 @@ export default function Command(props: LaunchProps) {
               tooltip={`${problem.message}\nClick to retry`}
               onAction={refreshNow}
             />
-          ) : null}
-        </MenuBarExtra.Section>
-      ) : null}
-
-      {environment.isDevelopment ? (
-        <MenuBarExtra.Section>
-          {BUILT_AT ? (
-            <MenuBarExtra.Item
-              title={`Dev build ${BUILT_AT.toLocaleString()}`}
-              icon={Icon.Hammer}
-            />
-          ) : null}
-          {launches.length ? (
-            <MenuBarExtra.Submenu title="Launch Log" icon={Icon.List}>
-              {launches.map((launch, i) => (
-                <MenuBarExtra.Item
-                  key={`${launch.at}-${i}`}
-                  title={`${new Date(launch.at).toLocaleTimeString()}   props: ${launch.prop ?? "none"}   env: ${launch.env ?? "none"}${launch.source ? `   via: ${launch.source}` : ""}`}
-                />
-              ))}
-            </MenuBarExtra.Submenu>
           ) : null}
         </MenuBarExtra.Section>
       ) : null}
